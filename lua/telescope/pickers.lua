@@ -59,6 +59,9 @@ function Picker:new(opts)
   local layout_strategy = get_default(opts.layout_strategy, config.values.layout_strategy)
 
   local obj = setmetatable({
+    -- Metadata reserved for telescope. Do not use if you're not telescope
+    __name = opts.__name,
+
     prompt_title = get_default(opts.prompt_title, "Prompt"),
     results_title = get_default(opts.results_title, "Results"),
     -- either whats passed in by the user or whats defined by the previewer
@@ -94,6 +97,7 @@ function Picker:new(opts)
     track = get_default(opts.track, false),
     stats = {},
 
+    mappings = opts.mappings or {},
     attach_mappings = opts.attach_mappings,
     file_ignore_patterns = get_default(opts.file_ignore_patterns, config.values.file_ignore_patterns),
 
@@ -505,7 +509,16 @@ function Picker:find()
     })
   )
 
-  mappings.apply_keymap(prompt_bufnr, self.attach_mappings, config.values.mappings)
+  mappings.apply_keymap(
+    prompt_bufnr,
+    self.attach_mappings,
+    -- Lowest priority: user config defaults
+    config.values.mappings or {},
+    -- user picker defaults
+    (config.pickers[self.__name] or {}).mappings or {},
+    -- explicit mappings via opts
+    self.mappings or {}
+  )
 
   tx.send()
   main_loop()

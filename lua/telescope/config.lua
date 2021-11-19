@@ -595,55 +595,8 @@ append(
   [[
   Your mappings to override telescope's default mappings.
 
-  Format is:
-  {
-    mode = { ..keys }
-  }
-
-  where {mode} is the one character letter for a mode
-  ('i' for insert, 'n' for normal).
-
-  For example:
-
-  mappings = {
-    i = {
-      ["<esc>"] = require('telescope.actions').close,
-    },
-  }
-
-
-  To disable a keymap, put [map] = false
-    So, to not map "<C-n>", just put
-
-      ...,
-      ["<C-n>"] = false,
-      ...,
-
-    Into your config.
-
-
-  otherwise, just set the mapping to the function that you want it to
-  be.
-
-      ...,
-      ["<C-i>"] = require('telescope.actions').select_default,
-      ...,
-
-  If the function you want is part of `telescope.actions`, then you can
-  simply give a string.
-    For example, the previous option is equivalent to:
-
-      ...,
-      ["<C-i>"] = "select_default",
-      ...,
-
-  You can also add other mappings using tables with `type = "command"`.
-    For example:
-
-      ...,
-      ["jj"] = { "<esc>", type = "command" },
-      ["kk"] = { "<cmd>echo \"Hello, World!\"<cr>", type = "command" },)
-      ...,
+  See: ~
+    |telescope.mappings()|
   ]]
 )
 

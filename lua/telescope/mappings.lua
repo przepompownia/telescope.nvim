@@ -1,4 +1,57 @@
--- TODO: Customize keymap
+---@tag telescope.mappings
+
+---@brief [[
+---  Format is:
+---  {
+---    mode = { ..keys }
+---  }
+---
+---  where {mode} is the one character letter for a mode
+---  ('i' for insert, 'n' for normal).
+---
+---  For example:
+---
+---  mappings = {
+---    i = {
+---      ["<esc>"] = require('telescope.actions').close,
+---    },
+---  }
+---
+---
+---  To disable a keymap, put [map] = false
+---    So, to not map "<C-n>", just put
+---
+---      ...,
+---      ["<C-n>"] = false,
+---      ...,
+---
+---    Into your config.
+---
+---
+---  otherwise, just set the mapping to the function that you want it to
+---  be.
+---
+---      ...,
+---      ["<C-i>"] = require('telescope.actions').select_default,
+---      ...,
+---
+---  If the function you want is part of `telescope.actions`, then you can
+---  simply give a string.
+---    For example, the previous option is equivalent to:
+---
+---      ...,
+---      ["<C-i>"] = "select_default",
+---      ...,
+---
+---  You can also add other mappings using tables with `type = "command"`.
+---    For example:
+---
+---      ...,
+---      ["jj"] = { "<esc>", type = "command" },
+---      ["kk"] = { "<cmd>echo \"Hello, World!\"<cr>", type = "command" },)
+---      ...,
+---@brief ]]
+
 local a = vim.api
 
 local actions = require "telescope.actions"
@@ -104,7 +157,7 @@ mappings.apply_keymap(42, <function>, {
     ["<CR>"] = function(picker, prompt_bufnr)
       actions.close_prompt()
 
->     local filename = ...
+      local filename = ...
       vim.cmd(string.format(":e %s", filename))
     end,
   },
@@ -117,6 +170,8 @@ local telescope_map = function(prompt_bufnr, mode, key_bind, key_func, opts)
   if not key_func then
     return
   end
+
+  key_bind = a.nvim_replace_termcodes(key_bind, true, true, true)
 
   opts = opts or {}
   if opts.noremap == nil then
@@ -171,14 +226,40 @@ local telescope_map = function(prompt_bufnr, mode, key_bind, key_func, opts)
   a.nvim_buf_set_keymap(prompt_bufnr, mode, key_bind, map_string, opts)
 end
 
-mappings.apply_keymap = function(prompt_bufnr, attach_mappings, buffer_keymap)
-  local applied_mappings = { n = {}, i = {} }
+local termcode_mt = {
+  __index = function(t, k)
+    return rawget(t, a.nvim_replace_termcodes(k, true, true, true))
+  end,
+
+  __newindex = function(t, k, v)
+    rawset(t, a.nvim_replace_termcodes(k, true, true, true), v)
+  end,
+}
+
+local mode_mt = {
+  __index = function(t, k)
+    k = string.lower(k)
+    if rawget(t, k) then
+      return rawget(t, k)
+    end
+
+    local val = setmetatable({}, termcode_mt)
+    rawset(t, k, val)
+    return val
+  end,
+}
+
+mappings.apply_keymap = function(prompt_bufnr, attach_mappings, ...)
+  local mappings_applied = setmetatable({}, mode_mt)
+  local mappings_config = setmetatable(vim.tbl_deep_extend("force", mappings.default_mappings or {}, ...), mode_mt)
 
   local map = function(mode, key_bind, key_func, opts)
-    mode = string.lower(mode)
-    local key_bind_internal = a.nvim_replace_termcodes(key_bind, true, true, true)
-    applied_mappings[mode][key_bind_internal] = true
+    -- Skip maps that are disabled by the user
+    if mappings_config[mode][key_bind] == false then
+      return
+    end
 
+    mappings_applied[mode][key_bind] = true
     telescope_map(prompt_bufnr, mode, key_bind, key_func, opts)
   end
 
@@ -197,26 +278,12 @@ mappings.apply_keymap = function(prompt_bufnr, attach_mappings, buffer_keymap)
     end
   end
 
-  for mode, mode_map in pairs(buffer_keymap or {}) do
+  for mode, mode_map in pairs(mappings_config) do
     mode = string.lower(mode)
 
     for key_bind, key_func in pairs(mode_map) do
-      local key_bind_internal = a.nvim_replace_termcodes(key_bind, true, true, true)
-      if not applied_mappings[mode][key_bind_internal] then
-        applied_mappings[mode][key_bind_internal] = true
-        telescope_map(prompt_bufnr, mode, key_bind, key_func)
-      end
-    end
-  end
-
-  -- TODO: Probably should not overwrite any keymaps
-  for mode, mode_map in pairs(mappings.default_mappings) do
-    mode = string.lower(mode)
-
-    for key_bind, key_func in pairs(mode_map) do
-      local key_bind_internal = a.nvim_replace_termcodes(key_bind, true, true, true)
-      if not applied_mappings[mode][key_bind_internal] then
-        applied_mappings[mode][key_bind_internal] = true
+      if not mappings_applied[mode][key_bind] then
+        mappings_applied[mode][key_bind] = true
         telescope_map(prompt_bufnr, mode, key_bind, key_func)
       end
     end
