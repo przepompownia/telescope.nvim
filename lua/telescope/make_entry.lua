@@ -26,6 +26,38 @@ local lsp_type_highlight = {
   ["Variable"] = "TelescopeResultsVariable",
 }
 
+local handle_entry_index = function(opts, t, k)
+  local override = ((opts or {}).entry_index or {})[k]
+  if not override then
+    return
+  end
+
+  local val, save = override(t, opts)
+  if save then
+    rawset(t, k, val)
+  end
+  return val
+end
+
+local set_default_entry_mt = function(tbl, opts)
+  return setmetatable({}, {
+    __index = function(t, k)
+      local override = handle_entry_index(opts, t, k)
+      if override then
+        return override
+      end
+
+      -- Only hit tbl once
+      local val = tbl[k]
+      if val then
+        rawset(t, k, val)
+      end
+
+      return val
+    end,
+  })
+end
+
 local make_entry = {}
 
 do
@@ -35,13 +67,18 @@ do
     value = 1,
   }
 
-  local mt_string_entry = {
-    __index = function(t, k)
-      return rawget(t, rawget(lookup_keys, k))
-    end,
-  }
+  function make_entry.gen_from_string(opts)
+    local mt_string_entry = {
+      __index = function(t, k)
+        local override = handle_entry_index(opts, t, k)
+        if override then
+          return override
+        end
 
-  function make_entry.gen_from_string()
+        return rawget(t, rawget(lookup_keys, k))
+      end,
+    }
+
     return function(line)
       return setmetatable({
         line,
@@ -82,6 +119,11 @@ do
     end
 
     mt_file_entry.__index = function(t, k)
+      local override = handle_entry_index(opts, t, k)
+      if override then
+        return override
+      end
+
       local raw = rawget(mt_file_entry, k)
       if raw then
         return raw
@@ -205,6 +247,11 @@ do
       end,
 
       __index = function(t, k)
+        local override = handle_entry_index(opts, t, k)
+        if override then
+          return override
+        end
+
         local raw = rawget(mt_vimgrep_entry, k)
         if raw then
           return raw
@@ -229,17 +276,17 @@ do
   end
 end
 
-function make_entry.gen_from_git_stash()
+function make_entry.gen_from_git_stash(opts)
   return function(entry)
     if entry == "" then
       return nil
     end
     local splitted = vim.split(entry, ":")
-    return {
+    return set_default_entry_mt({
       value = splitted[1],
       ordinal = splitted[3],
       display = splitted[3],
-    }
+    }, opts)
   end
 end
 
@@ -273,13 +320,13 @@ function make_entry.gen_from_git_commits(opts)
       msg = "<empty commit message>"
     end
 
-    return {
+    return set_default_entry_mt({
       value = sha,
       ordinal = sha .. " " .. msg,
       msg = msg,
       display = make_display,
       current_file = opts.current_file,
-    }
+    }, opts)
   end
 end
 
@@ -310,7 +357,7 @@ function make_entry.gen_from_quickfix(opts)
   return function(entry)
     local filename = entry.filename or vim.api.nvim_buf_get_name(entry.bufnr)
 
-    return {
+    return set_default_entry_mt({
       valid = true,
 
       value = entry,
@@ -324,7 +371,7 @@ function make_entry.gen_from_quickfix(opts)
       text = entry.text,
       start = entry.start,
       finish = entry.finish,
-    }
+    }, opts)
   end
 end
 
@@ -390,7 +437,7 @@ function make_entry.gen_from_lsp_symbols(opts)
       ordinal = filename .. " "
     end
     ordinal = ordinal .. symbol_name .. " " .. (symbol_type or "unknown")
-    return {
+    return set_default_entry_mt({
       valid = true,
 
       value = entry,
@@ -404,7 +451,7 @@ function make_entry.gen_from_lsp_symbols(opts)
       symbol_type = symbol_type,
       start = entry.start,
       finish = entry.finish,
-    }
+    }, opts)
   end
 end
 
@@ -455,7 +502,7 @@ function make_entry.gen_from_buffer(opts)
     local indicator = entry.flag .. hidden .. readonly .. changed
     local line_count = vim.api.nvim_buf_line_count(entry.bufnr)
 
-    return {
+    return set_default_entry_mt({
       valid = true,
 
       value = bufname,
@@ -467,7 +514,7 @@ function make_entry.gen_from_buffer(opts)
       -- account for potentially stale lnum as getbufinfo might not be updated or from resuming buffers picker
       lnum = entry.info.lnum ~= 0 and math.max(math.min(entry.info.lnum, line_count), 1) or 1,
       indicator = indicator,
-    }
+    }, opts)
   end
 end
 
@@ -513,7 +560,7 @@ function make_entry.gen_from_treesitter(opts)
     local ts_utils = require "nvim-treesitter.ts_utils"
     local start_row, start_col, end_row, _ = ts_utils.get_node_range(entry.node)
     local node_text = ts_utils.get_node_text(entry.node)[1]
-    return {
+    return set_default_entry_mt({
       valid = true,
 
       value = entry.node,
@@ -530,7 +577,7 @@ function make_entry.gen_from_treesitter(opts)
       text = node_text,
       start = start_row,
       finish = end_row,
-    }
+    }, opts)
   end
 end
 
@@ -545,14 +592,12 @@ function make_entry.gen_from_packages(opts)
   end
 
   return function(module_name)
-    local entry = {
+    return set_default_entry_mt({
       valid = module_name ~= "",
       value = module_name,
       ordinal = module_name,
-    }
-    entry.display = make_display(module_name)
-
-    return entry
+      display = make_display(module_name),
+    }, opts)
   end
 end
 
@@ -589,26 +634,26 @@ function make_entry.gen_from_apropos(opts)
     local keyword, cmd, section, desc = line:match "^((.-)%s*%(([^)]+)%).-)%s+%-%s+(.*)$"
     return keyword
         and sections[section]
-        and {
+        and set_default_entry_mt({
           value = cmd,
           description = desc,
           ordinal = cmd,
           display = make_display,
           section = section,
           keyword = keyword,
-        }
+        }, opts)
       or nil
   end
 end
 
-function make_entry.gen_from_marks(_)
+function make_entry.gen_from_marks(opts)
   return function(line)
     local split_value = utils.max_split(line, "%s+", 4)
 
     local mark_value = split_value[1]
     local cursor_position = vim.fn.getpos("'" .. mark_value)
 
-    return {
+    return set_default_entry_mt({
       value = line,
       ordinal = line,
       display = line,
@@ -616,11 +661,11 @@ function make_entry.gen_from_marks(_)
       col = cursor_position[3],
       start = cursor_position[2],
       filename = vim.api.nvim_buf_get_name(cursor_position[1]),
-    }
+    }, opts)
   end
 end
 
-function make_entry.gen_from_registers(_)
+function make_entry.gen_from_registers(opts)
   local displayer = entry_display.create {
     separator = " ",
     hl_chars = { ["["] = "TelescopeBorder", ["]"] = "TelescopeBorder" },
@@ -639,28 +684,28 @@ function make_entry.gen_from_registers(_)
   end
 
   return function(entry)
-    return {
+    return set_default_entry_mt({
       valid = true,
       value = entry,
       ordinal = entry,
       content = vim.fn.getreg(entry),
       display = make_display,
-    }
+    }, opts)
   end
 end
 
-function make_entry.gen_from_highlights()
+function make_entry.gen_from_highlights(opts)
   local make_display = function(entry)
     local display = entry.value
     return display, { { { 0, #display }, display } }
   end
 
   return function(entry)
-    return {
+    return set_default_entry_mt({
       value = entry,
       display = make_display,
       ordinal = entry,
-    }
+    }, opts)
   end
 end
 
@@ -681,12 +726,12 @@ function make_entry.gen_from_picker(opts)
   end
 
   return function(entry)
-    return {
+    return set_default_entry_mt({
       value = entry,
       text = entry.prompt_title,
       ordinal = string.format("%s %s", entry.prompt_title, utils.get_default(entry.default_text, "")),
       display = make_display,
-    }
+    }, opts)
   end
 end
 
@@ -729,18 +774,18 @@ function make_entry.gen_from_buffer_lines(opts)
       return
     end
 
-    return {
+    return set_default_entry_mt({
       valid = true,
       ordinal = entry.text,
       display = make_display,
       filename = entry.filename,
       lnum = entry.lnum,
       text = entry.text,
-    }
+    }, opts)
   end
 end
 
-function make_entry.gen_from_vimoptions()
+function make_entry.gen_from_vimoptions(opts)
   local process_one_opt = function(o)
     local ok, value_origin
 
@@ -834,7 +879,7 @@ function make_entry.gen_from_vimoptions()
     -- entry.raw_value = d.raw_value
     -- entry.last_set_from = d.last_set_from
 
-    return entry
+    return set_default_entry_mt(entry, opts)
   end
 end
 
@@ -931,7 +976,7 @@ function make_entry.gen_from_ctags(opts)
     tag_entry.col = 1
     tag_entry.lnum = lnum and tonumber(lnum) or 1
 
-    return setmetatable(tag_entry, mt)
+    return set_default_entry_mt(setmetatable(tag_entry, mt), opts)
   end
 end
 
@@ -990,7 +1035,7 @@ function make_entry.gen_from_lsp_diagnostics(opts)
   return function(entry)
     local filename = entry.filename or vim.api.nvim_buf_get_name(entry.bufnr)
 
-    return {
+    return set_default_entry_mt({
       valid = true,
 
       value = entry,
@@ -1003,11 +1048,11 @@ function make_entry.gen_from_lsp_diagnostics(opts)
       text = entry.text,
       start = entry.start,
       finish = entry.finish,
-    }
+    }, opts)
   end
 end
 
-function make_entry.gen_from_autocommands(_)
+function make_entry.gen_from_autocommands(opts)
   local displayer = entry_display.create {
     separator = "▏",
     items = {
@@ -1029,7 +1074,7 @@ function make_entry.gen_from_autocommands(_)
 
   -- TODO: <action> dump current filtered items to buffer
   return function(entry)
-    return {
+    return set_default_entry_mt({
       event = entry.event,
       group = entry.group,
       ft_pattern = entry.ft_pattern,
@@ -1037,15 +1082,14 @@ function make_entry.gen_from_autocommands(_)
       value = string.format("+%d %s", entry.source_lnum, entry.source_file),
       source_file = entry.source_file,
       source_lnum = entry.source_lnum,
-      --
       valid = true,
       ordinal = entry.event .. " " .. entry.group .. " " .. entry.ft_pattern .. " " .. entry.command,
       display = make_display,
-    }
+    }, opts)
   end
 end
 
-function make_entry.gen_from_commands(_)
+function make_entry.gen_from_commands(opts)
   local displayer = entry_display.create {
     separator = "▏",
     items = {
@@ -1078,7 +1122,7 @@ function make_entry.gen_from_commands(_)
   end
 
   return function(entry)
-    return {
+    return set_default_entry_mt({
       name = entry.name,
       bang = entry.bang,
       nargs = entry.nargs,
@@ -1089,7 +1133,7 @@ function make_entry.gen_from_commands(_)
       valid = true,
       ordinal = entry.name,
       display = make_display,
-    }
+    }, opts)
   end
 end
 
@@ -1148,13 +1192,13 @@ function make_entry.gen_from_git_status(opts)
     end
     local mod, file = string.match(entry, "(..).*%s[->%s]?(.+)")
 
-    return {
+    return setmetatable({
       value = file,
       status = mod,
       ordinal = entry,
       display = make_display,
       path = Path:new({ opts.cwd, file }):absolute(),
-    }
+    }, opts)
   end
 end
 
