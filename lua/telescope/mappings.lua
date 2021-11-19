@@ -78,18 +78,31 @@
 --- ordered from lowest priority to highest priority.
 ---
 --- 1. |telescope.defaults.mappings|
---- 2. The `pickers` key from |telescope.setup()|
+--- 2. In the |telescope.setup()| table, inside of a picker with a given name, use the `mappings` key
+--- <code>
+---     require("telescope").setup {
+---      pickers = {
+---        fd = {
+---          mappings = {
+---            n = {
+---              ["kj"] = "close",
+---            },
+---          },
+---        },
+---      },
+---    }
+--- </code>
 --- 3. The `mappings` key for a particular picker.
 --- <code>
----  require("telescope.builtin").fd {
----    mappings = {
----      i = {
----        asdf = function()
----          print "You typed asdf"
----        end,
----      },
----    },
----  }
+---     require("telescope.builtin").fd {
+---       mappings = {
+---         i = {
+---           asdf = function()
+---             print "You typed asdf"
+---           end,
+---         },
+---       },
+---     }
 --- </code>
 ---@brief ]]
 
