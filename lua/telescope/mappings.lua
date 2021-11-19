@@ -81,16 +81,16 @@
 --- 2. In the |telescope.setup()| table, inside of a picker with a given name, use the `mappings` key
 --- <code>
 ---     require("telescope").setup {
----      pickers = {
----        fd = {
----          mappings = {
----            n = {
----              ["kj"] = "close",
----            },
----          },
----        },
----      },
----    }
+---       pickers = {
+---         fd = {
+---           mappings = {
+---             n = {
+---               ["kj"] = "close",
+---             },
+---           },
+---         },
+---       },
+---     }
 --- </code>
 --- 3. The `mappings` key for a particular picker.
 --- <code>

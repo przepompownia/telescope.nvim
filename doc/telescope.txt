@@ -1595,16 +1595,16 @@ ordered from lowest priority to highest priority.
    the `mappings` key
 >
     require("telescope").setup {
-     pickers = {
-       fd = {
-         mappings = {
-           n = {
-             ["kj"] = "close",
-           },
-         },
-       },
-     },
-   }
+      pickers = {
+        fd = {
+          mappings = {
+            n = {
+              ["kj"] = "close",
+            },
+          },
+        },
+      },
+    }
 <
 3. The `mappings` key for a particular picker.
 >
