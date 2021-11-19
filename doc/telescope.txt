@@ -461,7 +461,7 @@ telescope.setup({opts})                                    *telescope.setup()*
         Your mappings to override telescope's default mappings.
 
         See: ~
-          |telescope.mappings()|
+          |telescope.mappings|
 
 
                                       *telescope.defaults.default_mappings*
@@ -1510,6 +1510,100 @@ themes.get_ivy()                                            *themes.get_ivy()*
 <
 
 
+
+
+================================================================================
+                                                            *telescope.mappings*
+
+|telescope.mappings| is used to configure the keybindings within a telescope
+picker. These keybinds are only local to the picker window and will be cleared
+once you exit the picker.
+
+We provie multiple different ways of configuring, as described below, to
+provide an easy to use experience for changing the defualt behavior of
+telescope or extending for your own purposes.
+
+To see many of the builtin actions that you can use as values for this table,
+see |telescope.actions|
+
+Format is:
+>
+    {
+        mode = { ..keys }
+    }
+<
+
+where {mode} is the one character letter for a mode ('i' for insert, 'n' for
+normal).
+
+For example:
+>
+ mappings = {
+   i = {
+     ["<esc>"] = require('telescope.actions').close,
+   },
+ }
+<
+
+To disable a keymap, put `[map] = false`
+For example:
+>
+    {
+        ...,
+        ["<C-n>"] = false,
+        ...,
+    }
+<
+Into your config.
+
+To override behavior of a key, simply set the value to be a function (either by
+requiring an action or by writing your own function)
+>
+    {
+        ...,
+        ["<C-i>"] = require('telescope.actions').select_default,
+        ...,
+    }
+<
+
+If the function you want is part of `telescope.actions`, then you can simply
+give a string. For example, the previous option is equivalent to:
+>
+    {
+        ...,
+        ["<C-i>"] = "select_default",
+        ...,
+    }
+<
+
+You can also add other mappings using tables with `type = "command"`. For
+example:
+>
+    {
+     ...,
+     ["jj"] = { "<esc>", type = "command" },
+     ["kk"] = { "<cmd>echo \"Hello, World!\"<cr>", type = "command" },)
+     ...,
+    }
+<
+
+There are three main places you can configure |telescope.mappings|. These are
+ordered from lowest priority to highest priority.
+
+1. |telescope.defaults.mappings|
+2. The `pickers` key from |telescope.setup()|
+3. The `mappings` key for a particular picker.
+>
+ require("telescope.builtin").fd {
+   mappings = {
+     i = {
+       asdf = function()
+         print "You typed asdf"
+       end,
+     },
+   },
+ }
+<
 
 
 ================================================================================

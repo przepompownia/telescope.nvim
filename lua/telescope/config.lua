@@ -596,7 +596,7 @@ append(
   Your mappings to override telescope's default mappings.
 
   See: ~
-    |telescope.mappings()|
+    |telescope.mappings|
   ]]
 )
 
