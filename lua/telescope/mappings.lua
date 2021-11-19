@@ -282,6 +282,10 @@ local mode_mt = {
     rawset(t, k, val)
     return val
   end,
+
+  __newindex = function(t, k, v)
+    rawset(t, string.lower(k), v)
+  end,
 }
 
 -- Apply the keymaps for a given set of configurations

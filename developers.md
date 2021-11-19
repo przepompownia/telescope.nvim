@@ -160,7 +160,7 @@ needs to return either `true` or `false`. If it returns false it means that only
 the actions defined in the function should be attached. In this case it would
 remove the default actions to move the selected item in the picker,
 `move_selection_{next,previous}`. So in most cases you'll want to return `true`.
-If the function does not return anything then an error is thrown. 
+If the function does not return anything then an error is thrown.
 
 The `attach_mappings` function has two parameters, `prompt_bufnr` is the buffer number
 of the prompt buffer, which we can use to get the pickers object and `map` is a function
@@ -195,6 +195,8 @@ We will now try to define our entry maker for our example by providing an
 `entry_maker` to `finders.new_table` and changing our table to be a little bit
 more interesting. We will end up with the following new code for `finders.new_table`:
 
+TODO: Explain more about entry_index when that's finalized.
+
 ```lua
     finder = finders.new_table {
       results = {
@@ -225,7 +227,7 @@ where `tbl` is the table returned by `entry_maker`. So in this example `tbl` wou
 give our `display` function access to `value` and `ordinal`.
 
 If our picker will have a lot of values it's suggested to use a function for `display`,
-especially if you are modifying the text to display. This way the function will only be executed 
+especially if you are modifying the text to display. This way the function will only be executed
 for the entries being displayed. For an example of an entry maker take a look at
 `lua/telescope/make_entry.lua`.
 
@@ -235,7 +237,7 @@ function `gen_from_git_commits` in `make_entry.lua`.
 
 The `ordinal` is also required, which is used for sorting. As already mentioned
 this allows us to have different display and sorting values. This allows `display`
-to be more complex with icons and special indicators but `ordinal` could be a simpler 
+to be more complex with icons and special indicators but `ordinal` could be a simpler
 sorting key.
 
 There are other important keys which can be set, but do not make sense in the
@@ -247,7 +249,7 @@ current context as we are not dealing with files:
 
 ### Previewer
 
-We will not write a previewer for this picker because it isn't required for 
+We will not write a previewer for this picker because it isn't required for
 basic colors and is a more advanced topic. It's already well documented in `:help
 telescope.previewers` so you can read this section if you want to write your
 own `previewer`. If you want a file previewer without columns you should
