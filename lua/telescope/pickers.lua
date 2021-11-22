@@ -209,52 +209,6 @@ function Picker:is_done()
   end
 end
 
---- Clear rows that are after the final remaining entry
----@note: useful when number of remaining results is narrowed down
----@param results_bufnr number: the buffer number of the results buffer
-function Picker:clear_extra_rows(results_bufnr)
-  if self:is_done() then
-    log.trace "Not clearing due to being already complete"
-    return
-  end
-
-  if not vim.api.nvim_buf_is_valid(results_bufnr) then
-    log.debug("Invalid results_bufnr for clearing:", results_bufnr)
-    return
-  end
-
-  local worst_line, ok, msg
-  if self.sorting_strategy == "ascending" then
-    local num_results = self.manager:num_results()
-    worst_line = self.max_results - num_results
-
-    if worst_line <= 0 then
-      return
-    end
-
-    ok, msg = pcall(vim.api.nvim_buf_set_lines, results_bufnr, num_results, -1, false, {})
-  else
-    worst_line = self:get_row(self.manager:num_results())
-    if worst_line <= 0 then
-      return
-    end
-
-    local empty_lines = utils.repeated_table(worst_line, "")
-    ok, msg = pcall(vim.api.nvim_buf_set_lines, results_bufnr, 0, worst_line, false, empty_lines)
-  end
-
-  if not ok then
-    log.debug("Failed to set lines:", msg)
-  end
-
-  log.trace("Clearing:", worst_line)
-end
-
---- Highlight the entry corresponding to the given row
----@param results_bufnr number: the buffer number of the results buffer
----@param prompt table: table with information about the prompt buffer
----@param display string: the text corresponding to the given row
----@param row number: the number of the chosen row
 function Picker:highlight_one_row(results_bufnr, prompt, display, row)
   if not self.sorter.highlighter then
     return
@@ -400,21 +354,67 @@ function Picker:find()
   self.prompt_prefix = prompt_prefix
   self:_reset_prefix_color()
 
-  -- TODO: This could be configurable in the future, but I don't know why you would
-  -- want to scroll through more than 10,000 items.
-  --
-  -- This just lets us stop doing stuff after tons of  things.
-  self.max_results = 1000
-
-  vim.api.nvim_buf_set_lines(results_bufnr, 0, self.max_results, false, utils.repeated_table(self.max_results, ""))
+  -- TODO: Need to make `self.offset` which will let me calculate the rows
+  -- and what not correctly (and scroll easily)
+  self.max_results = popup_opts.results.height
 
   local status_updater = self:get_status_updater(prompt_win, prompt_bufnr)
-  local debounced_status = debounce.throttle_leading(status_updater, 50)
 
   local tx, rx = channel.mpsc()
   self._on_lines = tx.send
 
   local find_id = self:_next_find_id()
+
+  local count = 0
+  local redraw = vim.schedule_wrap(function()
+    count = count + 1
+
+    if self.manager then
+      if not self.manager.dirty then
+        return
+      end
+
+      self.manager.dirty = false
+      local height = vim.api.nvim_win_get_height(self.results_win)
+      local window = self.manager:window(1, height)
+
+      self:_reset_highlights()
+
+      local displayed, highlights = {}, {}
+      for idx, entry in ipairs(window) do
+        local display, display_highlights = entry_display.resolve(self, entry)
+        local row = self:get_row(idx)
+
+        displayed[row] = self.entry_prefix .. display
+        highlights[row] = display_highlights
+      end
+
+      local lines = {}
+      for idx = 0, height do
+        lines[idx + 1] = displayed[idx] or ""
+      end
+
+      vim.api.nvim_buf_set_lines(self.results_bufnr, 0, -1, false, lines)
+
+      local prompt = self:_get_prompt()
+      local caret = self.selection_caret:sub(1, -2)
+      for row, display_highlights in pairs(highlights) do
+        local display = displayed[row]
+
+        self.highlighter:hi_selection(row, caret)
+        self.highlighter:hi_display(row, caret, display_highlights)
+        self.highlighter:hi_sorter(row, prompt, display)
+        self.highlighter:hi_multiselect(row, self:is_multi_selected(window[row]))
+      end
+
+      self:_do_selection(prompt)
+      status_updater { completed = false }
+
+      print("Screen updated:", count, "set lines", #displayed, #window)
+    end
+  end)
+  self.refresher = vim.loop.new_timer()
+  self.refresher:start(0, 50, redraw)
 
   local main_loop = async.void(function()
     self.sorter:_init()
@@ -456,16 +456,13 @@ function Picker:find()
       end
 
       local start_time = vim.loop.hrtime()
-
       local prompt = self:_get_next_filtered_prompt()
 
-      -- TODO: Entry manager should have a "bulk" setter. This can prevent a lot of redraws from display
       if self.cache_picker == false or not (self.cache_picker.is_cached == true) then
         self.sorter:_start(prompt)
-        self.manager = EntryManager:new(self.max_results, self.entry_adder, self.stats)
+        self.manager = EntryManager:new(self.max_results)
 
-        self:_reset_highlights()
-        local process_result = self:get_result_processor(find_id, prompt, debounced_status)
+        local process_result = self:get_result_processor(find_id, prompt)
         local process_complete = self:get_result_completor(self.results_bufnr, find_id, prompt, status_updater)
 
         local ok, msg = pcall(function()
@@ -478,7 +475,9 @@ function Picker:find()
 
         local diff_time = (vim.loop.hrtime() - start_time) / 1e6
         if self.debounce and diff_time < self.debounce then
+          self._sleeping = true
           async.util.sleep(self.debounce - diff_time)
+          self._sleeping = false
         end
       else
         -- TODO(scroll): This can only happen once, I don't like where it is.
@@ -863,10 +862,11 @@ function Picker:reset_prompt(text)
   self:_reset_prefix_color(self._current_prefix_hl_group)
 
   if text then
-    vim.api.nvim_win_set_cursor(self.prompt_win, { 1, #prompt_text })
+    -- vim.api.nvim_win_set_cursor(self.prompt_win, { 1, #prompt_text })
   end
 end
 
+--- Refresh the current picker
 ---@param finder finder: telescope finder (see telescope/finders.lua)
 ---@param opts table: options to pass when refreshing the picker
 ---@field new_prefix string|table: either as string or { new_string, hl_group }
@@ -969,6 +969,9 @@ function Picker:set_selection(row)
       return
     end
 
+    -- TODO(fps): Was this actually what I had?
+    a.nvim_buf_set_lines(results_bufnr, row, row + 1, false, { display })
+
     -- don't highlight any whitespace at the end of caret
     self.highlighter:hi_selection(row, caret:match "(.*%S)")
     self.highlighter:hi_sorter(row, prompt, display)
@@ -991,7 +994,7 @@ function Picker:set_selection(row)
 
   self:refresh_previewer()
 
-  vim.api.nvim_win_set_cursor(self.results_win, { row + 1, 0 })
+  -- vim.api.nvim_win_set_cursor(self.results_win, { row + 1, 0 })
 end
 
 --- Update prefix for entry on a given row
@@ -1073,77 +1076,6 @@ function Picker:cycle_previewers(next)
     self:refresh_previewer()
   elseif self.hidden_previewer then
     self.hidden_previewer = self.all_previewers[self.current_previewer_index]
-  end
-end
-
---- Handler for when entries are added by `self.manager`
----@param index number: the index to add the entry at
----@param entry table: the entry that has been added to the manager
----@param insert boolean: whether the entry has been "inserted" or not
-function Picker:entry_adder(index, entry, _, insert)
-  if not entry then
-    return
-  end
-
-  local row = self:get_row(index)
-
-  -- If it's less than 0, then we don't need to show it at all.
-  if row < 0 then
-    log.debug("ON_ENTRY: Weird row", row)
-    return
-  end
-
-  local display, display_highlights = entry_display.resolve(self, entry)
-  if not display then
-    log.info("Weird entry", entry)
-    return
-  end
-
-  -- This is the two spaces to manage the '> ' stuff.
-  -- Maybe someday we can use extmarks or floaty text or something to draw this and not insert here.
-  -- until then, insert two spaces
-  local prefix = self.entry_prefix
-  display = prefix .. display
-
-  self:_increment "displayed"
-
-  local offset = insert and 0 or 1
-  if not vim.api.nvim_buf_is_valid(self.results_bufnr) then
-    log.debug "ON_ENTRY: Invalid buffer"
-    return
-  end
-
-  -- TODO: Does this every get called?
-  -- local line_count = vim.api.nvim_win_get_height(self.results_win)
-  local line_count = vim.api.nvim_buf_line_count(self.results_bufnr)
-  if row > line_count then
-    return
-  end
-
-  if insert then
-    if self.sorting_strategy == "descending" then
-      vim.api.nvim_buf_set_lines(self.results_bufnr, 0, 1, false, {})
-    end
-  end
-
-  local set_ok, msg = pcall(vim.api.nvim_buf_set_lines, self.results_bufnr, row, row + offset, false, { display })
-  if set_ok then
-    if display_highlights then
-      self.highlighter:hi_display(row, prefix, display_highlights)
-    end
-    self:update_prefix(entry, row)
-    self:highlight_one_row(self.results_bufnr, self:_get_prompt(), display, row)
-  end
-
-  if not set_ok then
-    log.debug("Failed to set lines...", msg)
-  end
-
-  -- This pretty much only fails when people leave newlines in their results.
-  --  So we'll clean it up for them if it fails.
-  if not set_ok and display:find "\n" then
-    display = display:gsub("\n", " | ")
-    vim.api.nvim_buf_set_lines(self.results_bufnr, row, row + 1, false, { display })
   end
 end
 
@@ -1230,15 +1162,12 @@ end
 --- as appropriate and runs the sorters score function
 ---@param find_id number
 ---@param prompt string
----@param status_updater function
 ---@return function
-function Picker:get_result_processor(find_id, prompt, status_updater)
+function Picker:get_result_processor(find_id, prompt)
   local count = 0
 
   local cb_add = function(score, entry)
-    -- may need the prompt for tiebreak
-    self.manager:add_entry(self, score, entry, prompt)
-    status_updater { completed = false }
+    self.manager:add_entry(self, score, entry)
   end
 
   local cb_filter = function(_)
@@ -1299,7 +1228,6 @@ function Picker:get_result_completor(results_bufnr, find_id, prompt, status_upda
     state.set_global_key("current_line", self:_get_prompt())
     status_updater { completed = true }
 
-    self:clear_extra_rows(results_bufnr)
     self.sorter:_finish(prompt)
 
     self:_on_complete()
@@ -1393,6 +1321,9 @@ function pickers.on_close_prompt(prompt_bufnr)
   local status = state.get_status(prompt_bufnr)
   local picker = status.picker
 
+  picker.refresher:stop()
+  picker.refresher:close()
+
   if type(picker.cache_picker) == "table" then
     local cached_pickers = state.get_global_key "cached_pickers" or {}
 
@@ -1409,7 +1340,7 @@ function pickers.on_close_prompt(prompt_bufnr)
         if picker.manager then
           picker.manager.linked_states:truncate(picker.cache_picker.limit_entries)
         else
-          picker.manager = EntryManager:new(picker.max_results, picker.entry_adder, picker.stats)
+          picker.manager = EntryManager:new(picker.max_results)
         end
       end
       picker.default_text = picker:_get_prompt()
@@ -1464,13 +1395,6 @@ end
 
 function Picker:_detach()
   self.finder:close()
-
-  -- TODO: Can we add a "cleanup" / "teardown" function that completely removes these.
-  -- self.finder = nil
-  -- self.previewer = nil
-  -- self.sorter = nil
-  -- self.manager = nil
-
   self.closed = true
 end
 
@@ -1493,6 +1417,8 @@ function Picker:_get_next_filtered_prompt()
 end
 
 function Picker:_resume_picker()
+  error "TJ Has not implemented resuming yet"
+
   -- resume previous picker
   local index = 1
   for entry in self.manager:iter() do
