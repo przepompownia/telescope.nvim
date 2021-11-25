@@ -291,7 +291,14 @@ local mode_mt = {
 -- Apply the keymaps for a given set of configurations
 mappings.apply_keymap = function(prompt_bufnr, attach_mappings, ...)
   local mappings_applied = setmetatable({}, mode_mt)
-  local mappings_config = setmetatable(vim.tbl_deep_extend("force", mappings.default_mappings or {}, ...), mode_mt)
+
+  -- Set the mappings_config, and make sure that all transformations are applied
+  local mappings_config = setmetatable({}, mode_mt)
+  for mode, mode_map in pairs(vim.tbl_deep_extend("force", mappings.default_mappings or {}, ...)) do
+    for key_bind, val in pairs(mode_map) do
+      mappings_config[mode][key_bind] = val
+    end
+  end
 
   local map = function(mode, key_bind, key_func, opts)
     -- Skip maps that are disabled by the user
@@ -319,8 +326,6 @@ mappings.apply_keymap = function(prompt_bufnr, attach_mappings, ...)
   end
 
   for mode, mode_map in pairs(mappings_config) do
-    mode = string.lower(mode)
-
     for key_bind, key_func in pairs(mode_map) do
       if not mappings_applied[mode][key_bind] then
         mappings_applied[mode][key_bind] = true
