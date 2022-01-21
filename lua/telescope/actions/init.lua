@@ -1010,14 +1010,15 @@ actions.which_key = function(prompt_bufnr, opts)
   a.nvim_win_set_option(km_win_id, "winblend", opts.winblend)
   a.nvim_win_set_option(km_win_id, "foldenable", false)
 
-  vim.cmd(string.format(
-    "autocmd BufLeave <buffer> ++once lua %s",
-    table.concat({
-      string.format("pcall(vim.api.nvim_win_close, %s, true)", km_win_id),
-      string.format("pcall(vim.api.nvim_win_close, %s, true)", km_opts.border.win_id),
-      string.format("require 'telescope.utils'.buf_delete(%s)", km_buf),
-    }, ";")
-  ))
+  vim.api.nvim_define_autocmd {
+    event = "BufLeave",
+    once = true,
+    callback = function()
+      pcall(vim.api.nvim_win_close, km_win_id, true)
+      pcall(vim.api.nvim_win_close, km_opts.border.win_id, true)
+      require("telescope.utils").buf_delete(km_buf)
+    end,
+  }
 
   a.nvim_buf_set_lines(km_buf, 0, -1, false, utils.repeated_table(opts.num_rows + 2 * opts.line_padding, column_indent))
 
@@ -1050,14 +1051,16 @@ actions.which_key = function(prompt_bufnr, opts)
   -- only set up autocommand after showing preview completed
   if opts.close_with_action then
     vim.schedule(function()
-      vim.cmd(string.format(
-        "autocmd User TelescopeKeymap ++once lua %s",
-        table.concat({
-          string.format("pcall(vim.api.nvim_win_close, %s, true)", km_win_id),
-          string.format("pcall(vim.api.nvim_win_close, %s, true)", km_opts.border.win_id),
-          string.format("require 'telescope.utils'.buf_delete(%s)", km_buf),
-        }, ";")
-      ))
+      vim.api.nvim_define_autocmd {
+        group = "User",
+        event = "TelescopeKeymap",
+        once = true,
+        callback = function()
+          pcall(vim.api.nvim_win_close, km_win_id, true)
+          pcall(vim.api.nvim_win_close, km_opts.border.win_id, true)
+          require("telescope.utils").buf_delete(km_buf)
+        end,
+      }
     end)
   end
 end

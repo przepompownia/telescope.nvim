@@ -223,9 +223,13 @@ mappings.apply_keymap = function(prompt_bufnr, attach_mappings, buffer_keymap)
     end
   end
 
-  vim.cmd(
-    string.format([[autocmd BufDelete %s :lua require('telescope.mappings').clear(%s)]], prompt_bufnr, prompt_bufnr)
-  )
+  vim.api.nvim_define_autocmd {
+    event = "BufDelete",
+    buffer = prompt_bufnr,
+    callback = function()
+      require("telescope.mappings").clear(prompt_bufnr)
+    end,
+  }
 end
 
 mappings.execute_keymap = function(prompt_bufnr, keymap_identifier)
@@ -234,7 +238,7 @@ mappings.execute_keymap = function(prompt_bufnr, keymap_identifier)
   assert(key_func, string.format("Unsure of how we got this failure: %s %s", prompt_bufnr, keymap_identifier))
 
   key_func(prompt_bufnr)
-  vim.cmd [[ doautocmd User TelescopeKeymap ]]
+  vim.api.nvim_do_autocmd { group = "User", event = "TelescopeKeymap" }
 end
 
 mappings.clear = function(prompt_bufnr)
