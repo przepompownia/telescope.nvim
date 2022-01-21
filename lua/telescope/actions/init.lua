@@ -1052,8 +1052,7 @@ actions.which_key = function(prompt_bufnr, opts)
   if opts.close_with_action then
     vim.schedule(function()
       vim.api.nvim_define_autocmd {
-        group = "User",
-        event = "TelescopeKeymap",
+        event = "User TelescopeKeymap",
         once = true,
         callback = function()
           pcall(vim.api.nvim_win_close, km_win_id, true)
