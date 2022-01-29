@@ -27,7 +27,6 @@ local get_default = utils.get_default
 local truncate = require("plenary.strings").truncate
 local strdisplaywidth = require("plenary.strings").strdisplaywidth
 
-local ns_telescope_matching = a.nvim_create_namespace "telescope_matching"
 local ns_telescope_prompt = a.nvim_create_namespace "telescope_prompt"
 local ns_telescope_prompt_prefix = a.nvim_create_namespace "telescope_prompt_prefix"
 
@@ -213,38 +212,6 @@ function Picker:is_done()
   end
 end
 
-function Picker:highlight_one_row(results_bufnr, prompt, display, row)
-  if not self.sorter.highlighter then
-    return
-  end
-
-  local highlights = self.sorter:highlighter(prompt, display)
-
-  if highlights then
-    for _, hl in ipairs(highlights) do
-      local highlight, start, finish
-      if type(hl) == "table" then
-        highlight = hl.highlight or "TelescopeMatching"
-        start = hl.start
-        finish = hl.finish or hl.start
-      elseif type(hl) == "number" then
-        highlight = "TelescopeMatching"
-        start = hl
-        finish = hl
-      else
-        error "Invalid higlighter fn"
-      end
-
-      self:_increment "highlights"
-
-      vim.api.nvim_buf_add_highlight(results_bufnr, ns_telescope_matching, highlight, row, start - 1, finish)
-    end
-  end
-
-  local entry = self.manager:get_entry(self.offset, self:get_index(row))
-  self.highlighter:hi_multiselect(row, self:is_multi_selected(entry))
-end
-
 --- Check if the given row number can be selected
 ---@param row number: the number of the chosen row in the results buffer
 ---@return boolean
@@ -396,9 +363,9 @@ function Picker:find()
 
       self.manager.dirty = false
       local height = vim.api.nvim_win_get_height(self.results_win)
-      local window = self.manager:window(1, height)
+      local window = self.manager:window(1 + self.offset, self.num_visible + self.offset)
 
-      self:_reset_highlights()
+      self.highlighter:clear()
 
       local displayed, highlights = {}, {}
       for window_idx, entry in ipairs(window) do
@@ -435,7 +402,7 @@ function Picker:find()
   end)
 
   self.refresher = vim.loop.new_timer()
-  self.refresher:start(0, 50, redraw)
+  self.refresher:start(0, 100, redraw)
 
   local main_loop = async.void(function()
     self.sorter:_init()
@@ -784,7 +751,6 @@ function Picker:move_selection(change)
   local original = self:get_selection_row()
 
   self:set_selection(self:get_selection_row() + change)
-
   if original then
     self:_highlight_one_row(original)
   end
@@ -793,18 +759,25 @@ end
 function Picker:_highlight_one_row(row)
   local prompt = self:_get_prompt()
   local caret = self.selection_caret:sub(1, -2)
-  local entry = self.manager:get_entry(self.offset, self:get_index(row))
+  local entry = self:_get_entry_from_row(row)
   local display, display_highlights = entry_display.resolve(self, entry)
 
   self.highlighter:hi_display(row, caret, display_highlights)
   self.highlighter:hi_sorter(row, prompt, self.entry_prefix .. display)
-  -- self.highlighter:hi_multiselect(row, self:is_multi_selected(window[row]))
+end
+
+function Picker:_get_entry_from_row(row)
+  return self:_get_entry_from_index(self:get_index(row))
+end
+
+function Picker:_get_entry_from_index(idx)
+  return self.manager:get_entry(self.offset, idx)
 end
 
 --- Add the entry of the given row to the multi-select object
 ---@param row number: the number of the chosen row
 function Picker:add_selection(row)
-  local entry = self.manager:get_entry(self.offset, self:get_index(row))
+  local entry = self:_get_entry_from_row(row)
   self._multi:add(entry)
 
   self:update_prefix(entry, row)
@@ -815,7 +788,7 @@ end
 --- Remove the entry of the given row to the multi-select object
 ---@param row number: the number of the chosen row
 function Picker:remove_selection(row)
-  local entry = self.manager:get_entry(self.offset, self:get_index(row))
+  local entry = self:_get_entry_from_row(row)
   self._multi:drop(entry)
 
   self:update_prefix(entry, row)
@@ -841,7 +814,7 @@ end
 --- Also updates the highlighting for the given entry
 ---@param row number: the number of the chosen row
 function Picker:toggle_selection(row)
-  local entry = self.manager:get_entry(self.offset, self:get_index(row))
+  local entry = self:_get_entry_from_row(row)
   self._multi:toggle(entry)
 
   self:update_prefix(entry, row)
@@ -965,7 +938,7 @@ function Picker:set_selection(row)
     return
   end
 
-  local entry = self.manager:get_entry(self.offset, self:get_index(row))
+  local entry = self:_get_entry_from_row(row)
   state.set_global_key("selected_entry", entry)
 
   if not entry then
@@ -1052,8 +1025,11 @@ function Picker:update_prefix(entry, row)
   end
 
   local line = vim.api.nvim_buf_get_lines(self.results_bufnr, row, row + 1, false)[1]
-  if not line then
-    log.warn(string.format("no line found at row %d in buffer %d", row, self.results_bufnr))
+  if not line or line == "" then
+    -- TODO(fps): Decide if we can just quit out of here with this.
+    -- OR we need to set something about not having any results yet
+    -- log.warn(string.format("no line found at row %d in buffer %d", row, self.results_bufnr))
+
     return
   end
 
@@ -1425,11 +1401,6 @@ end
 --- Get the prompt text without the prompt prefix.
 function Picker:_get_prompt()
   return vim.api.nvim_buf_get_lines(self.prompt_bufnr, 0, 1, false)[1]:sub(#self.prompt_prefix + 1)
-end
-
-function Picker:_reset_highlights()
-  self.highlighter:clear_display()
-  vim.api.nvim_buf_clear_namespace(self.results_bufnr, ns_telescope_matching, 0, -1)
 end
 
 function Picker:_detach()

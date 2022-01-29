@@ -19,8 +19,8 @@ describe("process_result", function()
 
     eq(2, manager.linked_states.size)
 
-    eq("hello", manager:get_entry(1))
-    eq("later", manager:get_entry(2))
+    eq("hello", manager:get_entry(0, 1))
+    eq("later", manager:get_entry(0, 2))
   end)
 
   it("correctly sorts lower scores", function()
@@ -28,8 +28,8 @@ describe("process_result", function()
     manager:add_entry(nil, 5, "worse result")
     manager:add_entry(nil, 2, "better result")
 
-    eq("better result", manager:get_entry(1))
-    eq("worse result", manager:get_entry(2))
+    eq("better result", manager:get_entry(0, 1))
+    eq("worse result", manager:get_entry(0, 2))
   end)
 
   it("respects max results", function()
@@ -37,7 +37,7 @@ describe("process_result", function()
     manager:add_entry(nil, 2, "better result")
     manager:add_entry(nil, 5, "worse result")
 
-    eq("better result", manager:get_entry(1))
+    eq("better result", manager:get_entry(0, 1))
   end)
 
   it("should allow simple entries", function()
@@ -86,7 +86,7 @@ describe("process_result", function()
     manager:add_entry(nil, 4, "less worse result")
     manager:add_entry(nil, 2, "better result")
 
-    eq("better result", manager:get_entry(1))
+    eq("better result", manager:get_entry(0, 1))
     eq(4, manager.worst_acceptable_score)
   end)
 
@@ -102,8 +102,8 @@ describe("process_result", function()
     manager:add_entry(picker, 0.5, "same same", "asdf")
     manager:add_entry(picker, 0.5, "same", "asdf")
 
-    eq("same", manager:get_entry(1))
-    eq("same same", manager:get_entry(2))
+    eq("same", manager:get_entry(0, 1))
+    eq("same same", manager:get_entry(0, 2))
   end)
 
   it("should call tiebreaker if score is the same, keep initial", function()
@@ -118,8 +118,8 @@ describe("process_result", function()
     manager:add_entry(picker, 0.5, "same same", "asdf")
     manager:add_entry(picker, 0.5, "same", "asdf")
 
-    eq("same", manager:get_entry(2))
-    eq("same same", manager:get_entry(1))
+    eq("same", manager:get_entry(0, 2))
+    eq("same same", manager:get_entry(0, 1))
   end)
 
   it(":window() should return table of resuls", function()

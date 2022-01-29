@@ -1,5 +1,3 @@
-local log = require "telescope.log"
-
 local LinkedList = require "telescope.algos.linked_list"
 
 local EntryManager = {}

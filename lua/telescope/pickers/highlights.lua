@@ -4,6 +4,7 @@ local conf = require("telescope.config").values
 
 local highlights = {}
 
+local ns_telescope_matching = a.nvim_create_namespace "telescope_matching"
 local ns_telescope_selection = a.nvim_create_namespace "telescope_selection"
 local ns_telescope_multiselection = a.nvim_create_namespace "telescope_multiselection"
 local ns_telescope_entry = a.nvim_create_namespace "telescope_entry"
@@ -16,6 +17,10 @@ function Highlighter:new(picker)
     picker = picker,
   }, self)
 end
+
+local SELECTION_HIGHLIGHTS_PRIORITY = 105
+local DISPLAY_HIGHLIGHTS_PRIORITY = 110
+local SORTER_HIGHLIGHTS_PRIORITY = 120
 
 function Highlighter:hi_display(row, prefix, display_highlights)
   -- This is the bug that made my highlight fixes not work.
@@ -30,18 +35,16 @@ function Highlighter:hi_display(row, prefix, display_highlights)
   local len_prefix = #prefix
 
   for _, hl_block in ipairs(display_highlights) do
-    a.nvim_buf_add_highlight(
-      results_bufnr,
-      ns_telescope_entry,
-      hl_block[2],
-      row,
-      len_prefix + hl_block[1][1],
-      len_prefix + hl_block[1][2]
-    )
+    a.nvim_buf_set_extmark(results_bufnr, ns_telescope_entry, row, len_prefix + hl_block[1][1], {
+      end_col = len_prefix + hl_block[1][2],
+      hl_group = hl_block[2],
+      priority = DISPLAY_HIGHLIGHTS_PRIORITY,
+      strict = true,
+    })
   end
 end
 
-function Highlighter:clear_display()
+function Highlighter:clear()
   if
     not self
     or not self.picker
@@ -52,16 +55,44 @@ function Highlighter:clear_display()
   end
 
   a.nvim_buf_clear_namespace(self.picker.results_bufnr, ns_telescope_entry, 0, -1)
+  a.nvim_buf_clear_namespace(self.picker.results_bufnr, ns_telescope_matching, 0, -1)
 end
 
 function Highlighter:hi_sorter(row, prompt, display)
   local picker = self.picker
+  local sorter = picker.sorter
   if not picker.sorter or not picker.sorter.highlighter then
     return
   end
 
   local results_bufnr = assert(self.picker.results_bufnr, "Must have a results bufnr")
-  picker:highlight_one_row(results_bufnr, prompt, display, row)
+  local sorter_highlights = sorter:highlighter(prompt, display)
+
+  if sorter_highlights then
+    for _, hl in ipairs(sorter_highlights) do
+      local highlight, start, finish
+      if type(hl) == "table" then
+        highlight = hl.highlight or "TelescopeMatching"
+        start = hl.start
+        finish = hl.finish or hl.start
+      elseif type(hl) == "number" then
+        highlight = "TelescopeMatching"
+        start = hl
+        finish = hl
+      else
+        error "Invalid higlighter fn"
+      end
+
+      picker:_increment "highlights"
+
+      a.nvim_buf_set_extmark(results_bufnr, ns_telescope_matching, row, start - 1, {
+        end_col = finish,
+        hl_group = highlight,
+        priority = SORTER_HIGHLIGHTS_PRIORITY,
+        strict = true,
+      })
+    end
+  end
 end
 
 function Highlighter:hi_selection(row, caret)
@@ -69,15 +100,20 @@ function Highlighter:hi_selection(row, caret)
   local results_bufnr = assert(self.picker.results_bufnr, "Must have a results bufnr")
 
   a.nvim_buf_clear_namespace(results_bufnr, ns_telescope_selection, 0, -1)
-  a.nvim_buf_add_highlight(results_bufnr, ns_telescope_selection, "TelescopeSelectionCaret", row, 0, #caret)
 
-  a.nvim_buf_set_extmark(
-    results_bufnr,
-    ns_telescope_selection,
-    row,
-    #caret,
-    { end_line = row + 1, hl_eol = conf.hl_result_eol, hl_group = "TelescopeSelection" }
-  )
+  a.nvim_buf_set_extmark(results_bufnr, ns_telescope_selection, row, 0, {
+    end_col = #caret,
+    hl_group = "TelescopeSelectionCaret",
+    priority = SELECTION_HIGHLIGHTS_PRIORITY,
+    strict = true,
+  })
+
+  a.nvim_buf_set_extmark(results_bufnr, ns_telescope_selection, row, #caret, {
+    end_line = row + 1,
+    hl_eol = conf.hl_result_eol,
+    hl_group = "TelescopeSelection",
+    priority = SELECTION_HIGHLIGHTS_PRIORITY,
+  })
 end
 
 function Highlighter:hi_multiselect(row, is_selected)
