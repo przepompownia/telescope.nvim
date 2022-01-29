@@ -10,7 +10,6 @@ local popup = require "plenary.popup"
 local actions = require "telescope.actions"
 local action_set = require "telescope.actions.set"
 local config = require "telescope.config"
-local debounce = require "telescope.debounce"
 local deprecated = require "telescope.deprecated"
 local log = require "telescope.log"
 local mappings = require "telescope.mappings"
@@ -18,8 +17,6 @@ local state = require "telescope.state"
 local utils = require "telescope.utils"
 
 local entry_display = require "telescope.pickers.entry_display"
-local p_highlighter = require "telescope.pickers.highlights"
-local p_scroller = require "telescope.pickers.scroller"
 local p_window = require "telescope.pickers.window"
 
 local EntryManager = require "telescope.entry_manager"
@@ -39,6 +36,15 @@ local pickers = {}
 -- TODO: Add overscroll option for results buffer
 
 ---@class Picker
+---@field selection_strategy string
+---@field sorting_strategy string
+---@field entry_prefix string
+---@field sorter Sorter
+---@field highlighter table: TODO: Document highlighter
+---@field offset number: How far we've scrolled thus far
+---@field num_visible number: The number of possible visible entries. Not guaranteed to have that many entries
+---currently.
+
 --- Picker is the main UI that shows up to interact w/ your results.
 -- Takes a filter & a previewer
 local Picker = {}
@@ -153,10 +159,8 @@ function Picker:new(opts)
     obj.hidden_previewer = nil
   end
 
-  -- TODO: It's annoying that this is create and everything else is "new"
-  obj.scroller = p_scroller.create(obj.scroll_strategy, obj.sorting_strategy)
-
-  obj.highlighter = p_highlighter.new(obj)
+  obj.scroller = require("telescope.pickers.scroller").new(obj.scroll_strategy, obj.sorting_strategy)
+  obj.highlighter = require("telescope.pickers.highlights").new(obj)
 
   if opts.on_complete then
     for _, on_complete_item in ipairs(opts.on_complete) do
@@ -175,7 +179,7 @@ function Picker:get_row(index)
   if self.sorting_strategy == "ascending" then
     return index - 1
   else
-    return self.max_results - index
+    return self.num_visible - index
   end
 end
 
@@ -187,7 +191,7 @@ function Picker:get_index(row)
   if self.sorting_strategy == "ascending" then
     return row + 1
   else
-    return self.max_results - row
+    return self.num_visible - row
   end
 end
 
@@ -197,7 +201,7 @@ function Picker:get_reset_row()
   if self.sorting_strategy == "ascending" then
     return 0
   else
-    return self.max_results - 1
+    return self.num_visible - 1
   end
 end
 
@@ -237,7 +241,7 @@ function Picker:highlight_one_row(results_bufnr, prompt, display, row)
     end
   end
 
-  local entry = self.manager:get_entry(self:get_index(row))
+  local entry = self.manager:get_entry(self.offset, self:get_index(row))
   self.highlighter:hi_multiselect(row, self:is_multi_selected(entry))
 end
 
@@ -245,10 +249,12 @@ end
 ---@param row number: the number of the chosen row in the results buffer
 ---@return boolean
 function Picker:can_select_row(row)
+  -- TODO(fps): Need to handle scrolling w/ offsets now.
+
   if self.sorting_strategy == "ascending" then
-    return row <= self.manager:num_results() and row < self.max_results
+    return row <= self.manager:num_results() and row < self.num_visible
   else
-    return row >= 0 and row <= self.max_results and row >= self.max_results - self.manager:num_results()
+    return row >= 0 and row <= self.num_visible and row >= self.num_visible - self.manager:num_results()
   end
 end
 
@@ -354,9 +360,9 @@ function Picker:find()
   self.prompt_prefix = prompt_prefix
   self:_reset_prefix_color()
 
-  -- TODO: Need to make `self.offset` which will let me calculate the rows
-  -- and what not correctly (and scroll easily)
-  self.max_results = popup_opts.results.height
+  -- TODO: Probably should reset self.offset and what not when you type new keys?... hadn't thought about that before
+  self.offset = 0
+  self.num_visible = popup_opts.results.height
 
   local status_updater = self:get_status_updater(prompt_win, prompt_bufnr)
 
@@ -374,6 +380,20 @@ function Picker:find()
         return
       end
 
+      --[[
+      -------
+      |     |
+      |     |
+      |     |
+      -------
+
+      -> self.manager:window(start, finish)
+      window is a sorted list of entries, 1 -> (finish - start)
+      window has idx for each entry
+      - to calculate row for idx, use self:get_row(window_idx)
+
+      --]]
+
       self.manager.dirty = false
       local height = vim.api.nvim_win_get_height(self.results_win)
       local window = self.manager:window(1, height)
@@ -381,9 +401,9 @@ function Picker:find()
       self:_reset_highlights()
 
       local displayed, highlights = {}, {}
-      for idx, entry in ipairs(window) do
+      for window_idx, entry in ipairs(window) do
         local display, display_highlights = entry_display.resolve(self, entry)
-        local row = self:get_row(idx)
+        local row = self:get_row(window_idx)
 
         displayed[row] = self.entry_prefix .. display
         highlights[row] = display_highlights
@@ -413,6 +433,7 @@ function Picker:find()
       print("Screen updated:", count, "set lines", #displayed, #window)
     end
   end)
+
   self.refresher = vim.loop.new_timer()
   self.refresher:start(0, 50, redraw)
 
@@ -460,7 +481,7 @@ function Picker:find()
 
       if self.cache_picker == false or not (self.cache_picker.is_cached == true) then
         self.sorter:_start(prompt)
-        self.manager = EntryManager:new(self.max_results)
+        self.manager = EntryManager:new(self.num_visible)
 
         local process_result = self:get_result_processor(find_id, prompt)
         local process_complete = self:get_result_completor(self.results_bufnr, find_id, prompt, status_updater)
@@ -753,19 +774,37 @@ end
 --- Get the row number of the current selection
 ---@return number
 function Picker:get_selection_row()
-  return self._selection_row or self.max_results
+  -- TODO(fps): This seems WRONG -- what if it should be the first row? very confused
+  return self._selection_row or self.num_visible
 end
 
 --- Move the current selection by `change` steps
 ---@param change number
 function Picker:move_selection(change)
+  local original = self:get_selection_row()
+
   self:set_selection(self:get_selection_row() + change)
+
+  if original then
+    self:_highlight_one_row(original)
+  end
+end
+
+function Picker:_highlight_one_row(row)
+  local prompt = self:_get_prompt()
+  local caret = self.selection_caret:sub(1, -2)
+  local entry = self.manager:get_entry(self.offset, self:get_index(row))
+  local display, display_highlights = entry_display.resolve(self, entry)
+
+  self.highlighter:hi_display(row, caret, display_highlights)
+  self.highlighter:hi_sorter(row, prompt, self.entry_prefix .. display)
+  -- self.highlighter:hi_multiselect(row, self:is_multi_selected(window[row]))
 end
 
 --- Add the entry of the given row to the multi-select object
 ---@param row number: the number of the chosen row
 function Picker:add_selection(row)
-  local entry = self.manager:get_entry(self:get_index(row))
+  local entry = self.manager:get_entry(self.offset, self:get_index(row))
   self._multi:add(entry)
 
   self:update_prefix(entry, row)
@@ -776,7 +815,7 @@ end
 --- Remove the entry of the given row to the multi-select object
 ---@param row number: the number of the chosen row
 function Picker:remove_selection(row)
-  local entry = self.manager:get_entry(self:get_index(row))
+  local entry = self.manager:get_entry(self.offset, self:get_index(row))
   self._multi:drop(entry)
 
   self:update_prefix(entry, row)
@@ -802,7 +841,7 @@ end
 --- Also updates the highlighting for the given entry
 ---@param row number: the number of the chosen row
 function Picker:toggle_selection(row)
-  local entry = self.manager:get_entry(self:get_index(row))
+  local entry = self.manager:get_entry(self.offset, self:get_index(row))
   self._multi:toggle(entry)
 
   self:update_prefix(entry, row)
@@ -867,7 +906,7 @@ function Picker:reset_prompt(text)
 end
 
 --- Refresh the current picker
----@param finder finder: telescope finder (see telescope/finders.lua)
+---@param finder Finder: telescope finder (see telescope/finders.lua)
 ---@param opts table: options to pass when refreshing the picker
 ---@field new_prefix string|table: either as string or { new_string, hl_group }
 ---@field reset_prompt bool: whether to reset the prompt
@@ -900,7 +939,7 @@ function Picker:set_selection(row)
     return
   end
 
-  row = self.scroller(self.max_results, self.manager:num_results(), row)
+  row = self.scroller(self.num_visible, self.manager:num_results(), row)
 
   if not self:can_select_row(row) then
     -- If the current selected row exceeds number of currently displayed
@@ -908,7 +947,7 @@ function Picker:set_selection(row)
     if not self:can_select_row(self:get_selection_row()) then
       row = self:get_row(self.manager:num_results())
     else
-      log.trace("Cannot select row:", row, self.manager:num_results(), self.max_results)
+      log.trace("Cannot select row:", row, self.manager:num_results(), self.num_visible)
       return
     end
   end
@@ -926,7 +965,7 @@ function Picker:set_selection(row)
     return
   end
 
-  local entry = self.manager:get_entry(self:get_index(row))
+  local entry = self.manager:get_entry(self.offset, self:get_index(row))
   state.set_global_key("selected_entry", entry)
 
   if not entry then
@@ -1340,7 +1379,7 @@ function pickers.on_close_prompt(prompt_bufnr)
         if picker.manager then
           picker.manager.linked_states:truncate(picker.cache_picker.limit_entries)
         else
-          picker.manager = EntryManager:new(picker.max_results)
+          picker.manager = EntryManager:new(picker.num_visible)
         end
       end
       picker.default_text = picker:_get_prompt()

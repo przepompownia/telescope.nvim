@@ -5,11 +5,13 @@ local LinkedList = require "telescope.algos.linked_list"
 local EntryManager = {}
 EntryManager.__index = EntryManager
 
-function EntryManager:new(max_results)
+function EntryManager:new(num_sorted)
+  num_sorted = num_sorted or 500
+
   return setmetatable({
     dirty = true,
-    linked_states = LinkedList:new { track_at = max_results },
-    max_results = max_results,
+    linked_states = LinkedList:new { track_at = num_sorted },
+    num_sorted = num_sorted,
     worst_acceptable_score = math.huge,
   }, self)
 end
@@ -18,12 +20,12 @@ function EntryManager:num_results()
   return self.linked_states.size
 end
 
-function EntryManager:get_container(index)
+function EntryManager:get_container(offset, index)
   local count = 0
   for val in self.linked_states:iter() do
     count = count + 1
 
-    if count == index then
+    if count == offset + index then
       return val
     end
   end
@@ -31,16 +33,16 @@ function EntryManager:get_container(index)
   return {}
 end
 
-function EntryManager:get_entry(index)
-  return self:get_container(index)[1]
+function EntryManager:get_entry(offset, index)
+  return self:get_container(offset, index)[1]
 end
 
-function EntryManager:get_score(index)
-  return self:get_container(index)[2]
+function EntryManager:get_score(offset, index)
+  return self:get_container(offset, index)[2]
 end
 
-function EntryManager:get_ordinal(index)
-  return self:get_entry(index).ordinal
+function EntryManager:get_ordinal(offset, index)
+  return self:get_entry(offset, index).ordinal
 end
 
 function EntryManager:find_entry(entry)
@@ -84,7 +86,7 @@ end
 function EntryManager:add_entry(picker, score, entry, prompt)
   score = score or 0
 
-  local max_res = self.max_results
+  local num_sorted = self.num_sorted
   local worst_score = self.worst_acceptable_score
   local size = self.linked_states.size
 
@@ -114,12 +116,12 @@ function EntryManager:add_entry(picker, score, entry, prompt)
     end
 
     -- Don't add results that are too bad.
-    if index >= max_res then
+    if index >= num_sorted then
       return self:_append_container(picker, new_container, false)
     end
   end
 
-  if self.linked_states.size >= max_res then
+  if self.linked_states.size >= num_sorted then
     self.worst_acceptable_score = math.min(self.worst_acceptable_score, score)
   end
 
@@ -143,11 +145,15 @@ function EntryManager:window(start, finish)
   for val in self.linked_states:iter() do
     idx = idx + 1
 
+    if val == nil then
+      return
+    end
+
     if idx >= start then
       table.insert(results, val[1])
     end
 
-    if idx >= finish or idx >= self.max_results then
+    if idx >= finish then
       break
     end
   end
