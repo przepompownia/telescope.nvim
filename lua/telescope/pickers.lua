@@ -780,9 +780,9 @@ function Picker:add_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:add(entry)
 
-  self:update_prefix(entry, row)
+  local caret = self:update_prefix(entry, row)
   self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, true)
+  self.highlighter:hi_multiselect(row, caret, true)
 end
 
 --- Remove the entry of the given row to the multi-select object
@@ -791,9 +791,9 @@ function Picker:remove_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:drop(entry)
 
-  self:update_prefix(entry, row)
+  local caret = self:update_prefix(entry, row)
   self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, false)
+  self.highlighter:hi_multiselect(row, caret, false)
 end
 
 --- Check if the given row is in the multi-select object
@@ -817,9 +817,9 @@ function Picker:toggle_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:toggle(entry)
 
-  self:update_prefix(entry, row)
+  local caret = self:update_prefix(entry, row)
   self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, self._multi:is_selected(entry))
+  self.highlighter:hi_multiselect(row, caret, self._multi:is_selected(entry))
 end
 
 --- Set the current selection to `nil`
@@ -962,8 +962,8 @@ function Picker:set_selection(row)
       self._selection_entry = entry
 
       if old_row >= 0 then
-        self:update_prefix(old_entry, old_row)
-        self.highlighter:hi_multiselect(old_row, self:is_multi_selected(old_entry))
+        local caret = self:update_prefix(old_entry, old_row)
+        self.highlighter:hi_multiselect(old_row, caret, self:is_multi_selected(old_entry))
       end
     else
       self._selection_entry = entry
@@ -971,7 +971,7 @@ function Picker:set_selection(row)
 
     local caret = self:update_prefix(entry, row)
 
-    local display, _ = entry_display.resolve(self, entry)
+    local display, display_highlights = entry_display.resolve(self, entry)
     display = caret .. display
 
     -- TODO: You should go back and redraw the highlights for this line from the sorter.
@@ -987,8 +987,8 @@ function Picker:set_selection(row)
     -- don't highlight any whitespace at the end of caret
     self.highlighter:hi_selection(row, caret:match "(.*%S)")
     self.highlighter:hi_sorter(row, prompt, display)
-
-    self.highlighter:hi_multiselect(row, self:is_multi_selected(entry))
+    self.highlighter:hi_display(row, caret, display_highlights)
+    self.highlighter:hi_multiselect(row, caret, self:is_multi_selected(entry))
   end)
 
   if not set_ok then

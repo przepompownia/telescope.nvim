@@ -18,7 +18,7 @@ function Highlighter:new(picker)
   }, self)
 end
 
-local SELECTION_HIGHLIGHTS_PRIORITY = 105
+local SELECTION_HIGHLIGHTS_PRIORITY = 130
 local DISPLAY_HIGHLIGHTS_PRIORITY = 110
 local SORTER_HIGHLIGHTS_PRIORITY = 120
 
@@ -101,13 +101,17 @@ function Highlighter:hi_selection(row, caret)
 
   a.nvim_buf_clear_namespace(results_bufnr, ns_telescope_selection, 0, -1)
 
+  -- Highlight the caret
   a.nvim_buf_set_extmark(results_bufnr, ns_telescope_selection, row, 0, {
+    virt_text = { { caret, "TelescopeSelectionCaret" } },
+    virt_text_pos = "overlay",
     end_col = #caret,
     hl_group = "TelescopeSelectionCaret",
     priority = SELECTION_HIGHLIGHTS_PRIORITY,
     strict = true,
   })
 
+  -- Highlight the text after the caret
   a.nvim_buf_set_extmark(results_bufnr, ns_telescope_selection, row, #caret, {
     end_line = row + 1,
     hl_eol = conf.hl_result_eol,
@@ -116,11 +120,20 @@ function Highlighter:hi_selection(row, caret)
   })
 end
 
-function Highlighter:hi_multiselect(row, is_selected)
+-- TODO: I think all of this can be done with extmarks and no string goofiness.
+function Highlighter:hi_multiselect(row, caret, is_selected)
   local results_bufnr = assert(self.picker.results_bufnr, "Must have a results bufnr")
 
   if is_selected then
-    vim.api.nvim_buf_add_highlight(results_bufnr, ns_telescope_multiselection, "TelescopeMultiSelection", row, 0, -1)
+    vim.api.nvim_buf_add_highlight(
+      results_bufnr,
+      ns_telescope_multiselection,
+      "TelescopeMultiSelection",
+      row,
+      #caret,
+      -1
+    )
+
     if self.picker.multi_icon then
       local line = vim.api.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1]
       local pos = line:find(self.picker.multi_icon)
