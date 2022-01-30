@@ -134,6 +134,7 @@ function Picker:new(opts)
     cache_picker = config.resolve_table_opts(opts.cache_picker, vim.deepcopy(config.values.cache_picker)),
   }, self)
 
+  obj._prefix_padding = string.rep(" ", strdisplaywidth(obj.entry_prefix))
   obj.get_window_options = opts.get_window_options or p_window.get_window_options
 
   if obj.all_previewers ~= nil and obj.all_previewers ~= false then
@@ -372,7 +373,8 @@ function Picker:find()
         local display, display_highlights = entry_display.resolve(self, entry)
         local row = self:get_row(window_idx)
 
-        displayed[row] = self.entry_prefix .. display
+        -- displayed[row] = self.entry_prefix .. display
+        displayed[row] = self._prefix_padding .. display
         highlights[row] = display_highlights
       end
 
@@ -610,9 +612,6 @@ function Picker:recalculate_layout()
     popup.move(results_win, popup_opts.results)
   end
 
-  -- Temporarily disabled: Draw the screen ASAP. This makes things feel speedier.
-  -- vim.cmd [[redraw]]
-
   -- self.max_results = popup_opts.results.height
 end
 
@@ -839,7 +838,7 @@ function Picker:_reset_prefix_color(hl_group)
       self._current_prefix_hl_group or "TelescopePromptPrefix",
       0,
       0,
-      #self.prompt_prefix
+      #self._prefix_padding
     )
   end
 end
@@ -858,7 +857,7 @@ function Picker:change_prompt_prefix(new_prefix, hl_group)
   if new_prefix ~= "" then
     vim.fn.prompt_setprompt(self.prompt_bufnr, new_prefix)
   else
-    vim.api.nvim_buf_set_text(self.prompt_bufnr, 0, 0, 0, #self.prompt_prefix, {})
+    vim.api.nvim_buf_set_text(self.prompt_bufnr, 0, 0, 0, #self._prefix_padding, {})
     vim.api.nvim_buf_set_option(self.prompt_bufnr, "buftype", "")
   end
   self.prompt_prefix = new_prefix
@@ -972,7 +971,7 @@ function Picker:set_selection(row)
     local caret = self:update_prefix(entry, row)
 
     local display, display_highlights = entry_display.resolve(self, entry)
-    display = caret .. display
+    display = self._prefix_padding .. display
 
     -- TODO: You should go back and redraw the highlights for this line from the sorter.
     -- That's the only smart thing to do.
@@ -982,7 +981,7 @@ function Picker:set_selection(row)
     end
 
     -- TODO(fps): Was this actually what I had?
-    a.nvim_buf_set_lines(results_bufnr, row, row + 1, false, { display })
+    -- a.nvim_buf_set_lines(results_bufnr, row, row + 1, false, { display })
 
     -- don't highlight any whitespace at the end of caret
     self.highlighter:hi_selection(row, caret:match "(.*%S)")
@@ -1044,7 +1043,7 @@ function Picker:update_prefix(entry, row)
 
   local pre = prefix(entry == self._selection_entry, self:is_multi_selected(entry))
   -- Only change the first couple characters, nvim_buf_set_text leaves the existing highlights
-  a.nvim_buf_set_text(self.results_bufnr, row, 0, row, #old_caret, { pre })
+  -- a.nvim_buf_set_text(self.results_bufnr, row, 0, row, #old_caret, { pre })
   return pre
 end
 
