@@ -97,7 +97,7 @@ utils.filter_symbols = function(results, opts)
   if has_symbols and has_ignore then
     error "Either opts.symbols or opts.ignore_symbols, can't process opposing options at the same time ;)'"
     return
-  elseif not (has_ignore and has_symbols) then
+  elseif not (has_ignore or has_symbols) then
     return results
   elseif has_ignore then
     return vim.tbl_filter(function(item)
