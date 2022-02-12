@@ -13,34 +13,32 @@ local utils = require "telescope.utils"
 local lsp = {}
 
 lsp.references = function(opts)
-  local params = vim.lsp.util.make_position_params()
   local filepath = vim.fn.expand "%:p"
   local lnum = vim.fn.line "."
+  local entry_maker = opts.entry_maker or make_entry.gen_from_quickfix(opts)
+  local action = "textDocument/references"
+  local params = vim.tbl_extend("keep", vim.lsp.util.make_position_params(), {
+    context = {
+      includeDeclaration = vim.F.if_nil(opts.include_declaration, true),
+    },
+  })
 
-  params.context = {
-    includeDeclaration = vim.F.if_nil(opts.include_declaration, true),
-  }
-
-  vim.lsp.buf_request(0, "textDocument/references", params, function(err, result, ctx, _config)
+  vim.lsp.buf_request(0, action, params, function(err, result, ctx, _config)
     if err then
       vim.api.nvim_err_writeln("Error when finding references: " .. err.message)
       return
     end
 
     local locations = {}
-
     if result then
-      vim.list_extend(
-        locations,
-        vim.lsp.util.locations_to_items(result, vim.lsp.get_client_by_id(ctx.client_id).offset_encoding) or {}
-      )
+      local offset_encoding = vim.lsp.get_client_by_id(ctx.client_id).offset_encoding
+      local fixed_result = vim.lsp.util.locations_to_items(result, offset_encoding)
+      local found = false -- break early :)
+      locations = vim.tbl_filter(function(v)
+        -- Remove current line from result
+        return found or not (v.filename == filepath and v.lnum == lnum)
+      end, fixed_result or {})
     end
-
-    -- Remove current line from result
-    local found = false
-    locations = vim.tbl_filter(function(v)
-      return found or not (v.filename == filepath and v.lnum == lnum)
-    end, locations)
 
     if vim.tbl_isempty(locations) then
       return
@@ -48,10 +46,7 @@ lsp.references = function(opts)
 
     pickers.new(opts, {
       prompt_title = "LSP References",
-      finder = finders.new_table {
-        results = locations,
-        entry_maker = opts.entry_maker or make_entry.gen_from_quickfix(opts),
-      },
+      finder = finders.new_table { results = locations, entry_maker = entry_maker },
       previewer = conf.qflist_previewer(opts),
       sorter = conf.generic_sorter(opts),
     }):find()
