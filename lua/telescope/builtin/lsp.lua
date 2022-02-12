@@ -14,8 +14,11 @@ local lsp = {}
 
 lsp.references = function(opts)
   local params = vim.lsp.util.make_position_params()
+  local filepath = vim.fn.expand "%:p"
+  local lnum = vim.fn.line "."
+
   params.context = {
-    includeDeclaration = vim.F.if_nil(opts.include_declaration, false),
+    includeDeclaration = vim.F.if_nil(opts.include_declaration, true),
   }
 
   vim.lsp.buf_request(0, "textDocument/references", params, function(err, result, ctx, _config)
@@ -25,12 +28,19 @@ lsp.references = function(opts)
     end
 
     local locations = {}
+
     if result then
       vim.list_extend(
         locations,
         vim.lsp.util.locations_to_items(result, vim.lsp.get_client_by_id(ctx.client_id).offset_encoding) or {}
       )
     end
+
+    -- Remove current line from result
+    local found = false
+    locations = vim.tbl_filter(function(v)
+      return found or not (v.filename == filepath and v.lnum == lnum)
+    end, locations)
 
     if vim.tbl_isempty(locations) then
       return
