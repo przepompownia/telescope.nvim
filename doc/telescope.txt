@@ -1348,7 +1348,7 @@ builtin.lsp_type_definitions({opts})          *builtin.lsp_type_definitions()*
                                          "vsplit", "never"
         {ignore_filename}     (boolean)  dont show filenames (default: true)
         {include_declaration} (boolean)  include symbol declaration in the lsp
-                                         references (default: false)
+                                         references (default: true)
 
 
 builtin.lsp_implementations({opts})            *builtin.lsp_implementations()*
