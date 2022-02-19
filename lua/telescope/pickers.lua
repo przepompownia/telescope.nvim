@@ -975,8 +975,9 @@ function Picker:set_selection(row)
   self._selection_entry = entry
   self._selection_row = row
 
-  self.highlighter:hi_selection(row)
-  self.highlighter:hi_multiselect(row, self:is_multi_selected(entry))
+  self.highlighter:highlight(row, {
+    skip_display = true,
+  })
 
   self:refresh_previewer()
 

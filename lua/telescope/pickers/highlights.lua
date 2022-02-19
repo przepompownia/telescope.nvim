@@ -180,10 +180,11 @@ function Highlighter:hi_multiselect(row, is_selected)
   if is_selected then
     local line = a.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1]
     a.nvim_buf_set_extmark(results_bufnr, ns_telescope_multiselection, row, self.offset, {
-      end_col = strdisplaywidth(line),
+      end_col = #line,
       hl_group = "TelescopeMultiSelection",
     })
 
+    -- TEST WITH MULTI-BYTE CHARS
     if self.picker.multi_icon and self.offset > 0 then
       local icon = self.picker.multi_icon
       local cols = strdisplaywidth(icon)
