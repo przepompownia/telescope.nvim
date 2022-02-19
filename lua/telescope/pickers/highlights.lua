@@ -82,7 +82,7 @@ function Highlighter:clear()
     not self
     or not self.picker
     or not self.picker.results_bufnr
-    or not vim.api.nvim_buf_is_valid(self.picker.results_bufnr)
+    or not a.nvim_buf_is_valid(self.picker.results_bufnr)
   then
     return
   end
@@ -138,13 +138,17 @@ function Highlighter:hi_selection(row)
 
   a.nvim_buf_clear_namespace(results_bufnr, ns_telescope_selection, 0, -1)
 
+  -- If there isn't anything _on_ the line, then it's some edge case with
+  -- loading the buffer or something like that.
+  --
+  -- We can just skip and we'll get the updates later.
   if a.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1] == "" then
     return
   end
 
+  -- TODO: Someone will complain about the highlighting here I'm sure.
+  -- I don't know what to tell them except what are you doing w/ highlighting
   local caret = self.picker.selection_caret
-
-  -- TODO: Think about this... shouldn't this only highlight the caret?
   local offset = self.offset
 
   -- Highlight the caret
@@ -166,64 +170,31 @@ function Highlighter:hi_selection(row)
   })
 end
 
--- TODO: I think all of this can be done with extmarks and no string goofiness.
 function Highlighter:hi_multiselect(row, is_selected)
-  -- TODO: SOMETHING
-  -- local caret = self:update_prefix(old_entry, old_row)
-
   local results_bufnr = assert(self.picker.results_bufnr, "Must have a results bufnr")
   if not a.nvim_buf_is_valid(results_bufnr) then
     return
   end
 
+  a.nvim_buf_clear_namespace(results_bufnr, ns_telescope_multiselection, row, row + 1)
   if is_selected then
-    vim.api.nvim_buf_add_highlight(
-      results_bufnr,
-      ns_telescope_multiselection,
-      "TelescopeMultiSelection",
-      row,
-      -- strdisplaywidth(caret),
-      self.offset,
-      -1
-    )
+    local line = a.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1]
+    a.nvim_buf_set_extmark(results_bufnr, ns_telescope_multiselection, row, self.offset, {
+      end_col = strdisplaywidth(line),
+      hl_group = "TelescopeMultiSelection",
+    })
 
-    if self.picker.multi_icon then
-      local line = vim.api.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1]
-      local pos = line:find(self.picker.multi_icon)
-      if
-        pos
-        and pos <= math.max(strdisplaywidth(self.picker.selection_caret), strdisplaywidth(self.picker.entry_prefix))
-      then
-        vim.api.nvim_buf_add_highlight(
-          results_bufnr,
-          ns_telescope_multiselection,
-          "TelescopeMultiIcon",
-          row,
-          pos - 1,
-          pos - 1 + strdisplaywidth(self.picker.multi_icon)
-        )
-      end
-    end
-  else
-    local existing_marks = vim.api.nvim_buf_get_extmarks(
-      results_bufnr,
-      ns_telescope_multiselection,
-      { row, 0 },
-      { row, -1 },
-      {}
-    )
-
-    -- This is still kind of weird to me, since it seems like I'm erasing stuff
-    -- when I shouldn't... Perhaps it's about the gravity of the extmark?
-    if #existing_marks > 0 then
-      log.trace("Clearing highlight multi select row: ", row)
-
-      vim.api.nvim_buf_clear_namespace(results_bufnr, ns_telescope_multiselection, row, row + 1)
+    if self.picker.multi_icon and self.offset > 0 then
+      local icon = self.picker.multi_icon
+      local cols = strdisplaywidth(icon)
+      a.nvim_buf_set_extmark(results_bufnr, ns_telescope_multiselection, row, self.offset - cols, {
+        end_col = self.offset,
+        virt_text = { { self.picker.multi_icon, "TelescopeMultiIcon" } },
+        virt_text_pos = "overlay",
+      })
     end
   end
 end
-
--- local caret = self:update_prefix(entry, row)
 
 highlights.new = function(...)
   return Highlighter:new(...)
