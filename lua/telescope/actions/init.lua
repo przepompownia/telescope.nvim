@@ -121,7 +121,7 @@ function actions.select_all(prompt_bufnr)
       end
     end
   end)
-  current_picker:get_status_updater(current_picker.prompt_win, current_picker.prompt_bufnr)()
+  current_picker:_update_status()
 end
 
 --- Drop all entries from the current multi selection.
@@ -138,7 +138,7 @@ function actions.drop_all(prompt_bufnr)
       current_picker.highlighter:hi_multiselect(row, current_picker._multi:is_selected(entry))
     end
   end)
-  current_picker:get_status_updater(current_picker.prompt_win, current_picker.prompt_bufnr)()
+  current_picker:_update_status()
 end
 
 --- Toggle multi selection for all entries.
@@ -156,7 +156,7 @@ function actions.toggle_all(prompt_bufnr)
       current_picker.highlighter:hi_multiselect(row, current_picker._multi:is_selected(entry))
     end
   end)
-  current_picker:get_status_updater(current_picker.prompt_win, current_picker.prompt_bufnr)()
+  current_picker:_update_status()
 end
 
 function actions.preview_scrolling_up(prompt_bufnr)

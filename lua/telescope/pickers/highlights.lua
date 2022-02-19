@@ -35,10 +35,6 @@ function Highlighter:highlight(row, opts)
   local is_selected = opts.is_selected or (picker._selection_row == row)
   local is_multi_selected = opts.is_multi_selected or picker:is_multi_selected(entry)
 
-  -- local do_display = opts.do_display or true
-  -- local do_sorter = opts.do_sorter or true
-  -- local do_multiselect = opts.do_multiselect or true
-
   if is_selected then
     self:hi_selection(row)
   end

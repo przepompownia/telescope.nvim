@@ -150,8 +150,6 @@ function Picker:new(opts)
   )
   obj._prefix_string = obj.entry_prefix .. string.rep(" ", strdisplaywidth(obj.entry_prefix) - obj._prefix_width)
 
-  print(obj._prefix_width, "'" .. obj._prefix_string, "'")
-
   obj.get_window_options = opts.get_window_options or p_window.get_window_options
 
   if obj.all_previewers ~= nil and obj.all_previewers ~= false then
@@ -349,7 +347,9 @@ function Picker:find()
   self.offset = 0
   self.num_visible = popup_opts.results.height
 
-  local status_updater = self:get_status_updater(prompt_win, prompt_bufnr)
+  local status_updater = function(opts)
+    return self:_update_status(opts)
+  end
 
   local tx, rx = channel.mpsc()
   self._on_lines = tx.send
@@ -404,12 +404,7 @@ function Picker:find()
       local prompt = self:_get_prompt()
       self:_do_selection(prompt)
 
-      print("Current Selection Row:", self._selection_row)
       for row, display_highlights in pairs(highlights) do
-        if row == self._selection_row then
-          print("This should do something...", row)
-        end
-
         self.highlighter:highlight(row, {
           prompt = prompt,
           entry = window[row],
@@ -419,8 +414,6 @@ function Picker:find()
       end
 
       status_updater { completed = false }
-
-      -- print("Screen updated:", count)
     end
   end)
 
@@ -772,12 +765,8 @@ function Picker:move_selection(change)
 
   self:set_selection(self:get_selection_row() + change)
   if original then
-    self:_highlight_one_row(original)
+    self.highlighter:highlight(original, {})
   end
-end
-
-function Picker:_highlight_one_row(row)
-  self.highlighter:highlight(row, {})
 end
 
 function Picker:_resolve_entry_display(entry)
@@ -797,9 +786,11 @@ end
 function Picker:add_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:add(entry)
-
-  self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  -- self.highlighter:hi_multiselect(row, caret, true)
+  self:_update_status()
+  self.highlighter:highlight(row, {
+    skip_display = true,
+    is_multi_selected = true,
+  })
 end
 
 --- Remove the entry of the given row to the multi-select object
@@ -807,9 +798,11 @@ end
 function Picker:remove_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:drop(entry)
-
-  self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, false)
+  self:_update_status()
+  self.highlighter:highlight(row, {
+    skip_display = true,
+    is_multi_selected = false,
+  })
 end
 
 --- Check if the given row is in the multi-select object
@@ -832,9 +825,10 @@ end
 function Picker:toggle_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:toggle(entry)
-
-  self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, self._multi:is_selected(entry))
+  self:_update_status()
+  self.highlighter:highlight(row, {
+    skip_display = true,
+  })
 end
 
 --- Set the current selection to `nil`
@@ -1122,33 +1116,31 @@ end
 
 --- Returns a function that sets virtual text for the count indicator
 --- e.g. "10/50" as "filtered"/"processed"
----@param prompt_win number
----@param prompt_bufnr number
----@return function
-function Picker:get_status_updater(prompt_win, prompt_bufnr)
-  return function(opts)
-    if self.closed or not vim.api.nvim_buf_is_valid(prompt_bufnr) then
-      return
-    end
+function Picker:_update_status(opts)
+  local prompt_win = self.prompt_win
+  local prompt_bufnr = self.prompt_bufnr
 
-    local current_prompt = self:_get_prompt()
-    if not current_prompt then
-      return
-    end
-
-    if not vim.api.nvim_win_is_valid(prompt_win) then
-      return
-    end
-
-    local text = self:get_status_text(opts)
-    vim.api.nvim_buf_clear_namespace(prompt_bufnr, ns_telescope_prompt, 0, -1)
-    vim.api.nvim_buf_set_extmark(prompt_bufnr, ns_telescope_prompt, 0, 0, {
-      virt_text = { { text, "TelescopePromptCounter" } },
-      virt_text_pos = "right_align",
-    })
-
-    self:_increment "status"
+  if self.closed or not vim.api.nvim_buf_is_valid(prompt_bufnr) then
+    return
   end
+
+  local current_prompt = self:_get_prompt()
+  if not current_prompt then
+    return
+  end
+
+  if not vim.api.nvim_win_is_valid(prompt_win) then
+    return
+  end
+
+  local text = self:get_status_text(opts)
+  vim.api.nvim_buf_clear_namespace(prompt_bufnr, ns_telescope_prompt, 0, -1)
+  vim.api.nvim_buf_set_extmark(prompt_bufnr, ns_telescope_prompt, 0, 0, {
+    virt_text = { { text, "TelescopePromptCounter" } },
+    virt_text_pos = "right_align",
+  })
+
+  self:_increment "status"
 end
 
 --- Returns a function that will process an element.
