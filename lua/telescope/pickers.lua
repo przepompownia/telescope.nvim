@@ -16,7 +16,6 @@ local mappings = require "telescope.mappings"
 local state = require "telescope.state"
 local utils = require "telescope.utils"
 
-local entry_display = require "telescope.pickers.entry_display"
 local p_window = require "telescope.pickers.window"
 
 local EntryManager = require "telescope.entry_manager"
@@ -73,11 +72,7 @@ function Picker:new(opts)
     -- either whats passed in by the user or whats defined by the previewer
     preview_title = opts.preview_title,
 
-    prompt_prefix = get_default(opts.prompt_prefix, config.values.prompt_prefix),
     wrap_results = get_default(opts.wrap_results, config.values.wrap_results),
-    selection_caret = get_default(opts.selection_caret, config.values.selection_caret),
-    entry_prefix = get_default(opts.entry_prefix, config.values.entry_prefix),
-    multi_icon = get_default(opts.multi_icon, config.values.multi_icon),
 
     initial_mode = get_default(opts.initial_mode, config.values.initial_mode),
     debounce = get_default(tonumber(opts.debounce), nil),
@@ -134,7 +129,29 @@ function Picker:new(opts)
     cache_picker = config.resolve_table_opts(opts.cache_picker, vim.deepcopy(config.values.cache_picker)),
   }, self)
 
-  obj._prefix_padding = string.rep(" ", strdisplaywidth(obj.entry_prefix))
+  -- Separate idea, just for prompt only. Doesn't affect any of the other items.
+  obj.prompt_prefix = get_default(opts.prompt_prefix, config.values.prompt_prefix)
+
+  -- These are all for each individual row.
+  -- TODO(1.0): I think this name should be "multiselect_icon" to more clear.
+  --            Maybe even something a bit different from that.
+  obj.multi_icon = get_default(opts.multi_icon, config.values.multi_icon)
+
+  obj.selection_caret = get_default(opts.selection_caret, config.values.selection_caret)
+  obj.entry_prefix = get_default(opts.entry_prefix, config.values.entry_prefix)
+
+  -- TODO: Should be different, to be the actual prefix text (can just prepend each time)
+  obj._prefix_width = math.max(
+    -- While entry prefix could be different than selection caret,
+    -- we want to make sure that the results don't shift while moving up & down.
+    -- I don't like that kind of behavior
+    strdisplaywidth(obj.entry_prefix),
+    strdisplaywidth(obj.selection_caret)
+  )
+  obj._prefix_string = obj.entry_prefix .. string.rep(" ", strdisplaywidth(obj.entry_prefix) - obj._prefix_width)
+
+  print(obj._prefix_width, "'" .. obj._prefix_string, "'")
+
   obj.get_window_options = opts.get_window_options or p_window.get_window_options
 
   if obj.all_previewers ~= nil and obj.all_previewers ~= false then
@@ -368,38 +385,42 @@ function Picker:find()
 
       self.highlighter:clear()
 
+      -- Get the contents to display and associated highlights
       local displayed, highlights = {}, {}
       for window_idx, entry in ipairs(window) do
-        local display, display_highlights = entry_display.resolve(self, entry)
         local row = self:get_row(window_idx)
-
-        -- displayed[row] = self.entry_prefix .. display
-        displayed[row] = self._prefix_padding .. display
-        highlights[row] = display_highlights
+        displayed[row], highlights[row] = self:_resolve_entry_display(entry)
       end
 
+      -- Push display contents into lines buffer
       local lines = {}
       for idx = 0, height do
-        lines[idx + 1] = displayed[idx] or ""
+        lines[idx + 1] = (displayed[idx] and self._prefix_string .. displayed[idx]) or ""
       end
 
+      -- Display contents
       vim.api.nvim_buf_set_lines(self.results_bufnr, 0, -1, false, lines)
 
       local prompt = self:_get_prompt()
-      local caret = self.selection_caret:sub(1, -2)
-      for row, display_highlights in pairs(highlights) do
-        local display = displayed[row]
+      self:_do_selection(prompt)
 
-        self.highlighter:hi_selection(row, caret)
-        self.highlighter:hi_display(row, caret, display_highlights)
-        self.highlighter:hi_sorter(row, prompt, display)
-        self.highlighter:hi_multiselect(row, self:is_multi_selected(window[row]))
+      print("Current Selection Row:", self._selection_row)
+      for row, display_highlights in pairs(highlights) do
+        if row == self._selection_row then
+          print("This should do something...", row)
+        end
+
+        self.highlighter:highlight(row, {
+          prompt = prompt,
+          entry = window[row],
+          display = displayed[row],
+          display_highlights = display_highlights,
+        })
       end
 
-      self:_do_selection(prompt)
       status_updater { completed = false }
 
-      print("Screen updated:", count, "set lines", #displayed, #window)
+      -- print("Screen updated:", count)
     end
   end)
 
@@ -756,13 +777,11 @@ function Picker:move_selection(change)
 end
 
 function Picker:_highlight_one_row(row)
-  local prompt = self:_get_prompt()
-  local caret = self.selection_caret:sub(1, -2)
-  local entry = self:_get_entry_from_row(row)
-  local display, display_highlights = entry_display.resolve(self, entry)
+  self.highlighter:highlight(row, {})
+end
 
-  self.highlighter:hi_display(row, caret, display_highlights)
-  self.highlighter:hi_sorter(row, prompt, self.entry_prefix .. display)
+function Picker:_resolve_entry_display(entry)
+  return require("telescope.pickers.entry_display").resolve(self, entry)
 end
 
 function Picker:_get_entry_from_row(row)
@@ -779,9 +798,8 @@ function Picker:add_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:add(entry)
 
-  local caret = self:update_prefix(entry, row)
   self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, caret, true)
+  -- self.highlighter:hi_multiselect(row, caret, true)
 end
 
 --- Remove the entry of the given row to the multi-select object
@@ -790,9 +808,8 @@ function Picker:remove_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:drop(entry)
 
-  local caret = self:update_prefix(entry, row)
   self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, caret, false)
+  self.highlighter:hi_multiselect(row, false)
 end
 
 --- Check if the given row is in the multi-select object
@@ -816,9 +833,8 @@ function Picker:toggle_selection(row)
   local entry = self:_get_entry_from_row(row)
   self._multi:toggle(entry)
 
-  local caret = self:update_prefix(entry, row)
   self:get_status_updater(self.prompt_win, self.prompt_bufnr)()
-  self.highlighter:hi_multiselect(row, caret, self._multi:is_selected(entry))
+  self.highlighter:hi_multiselect(row, self._multi:is_selected(entry))
 end
 
 --- Set the current selection to `nil`
@@ -838,7 +854,7 @@ function Picker:_reset_prefix_color(hl_group)
       self._current_prefix_hl_group or "TelescopePromptPrefix",
       0,
       0,
-      #self._prefix_padding
+      self._prefix_width
     )
   end
 end
@@ -857,7 +873,7 @@ function Picker:change_prompt_prefix(new_prefix, hl_group)
   if new_prefix ~= "" then
     vim.fn.prompt_setprompt(self.prompt_bufnr, new_prefix)
   else
-    vim.api.nvim_buf_set_text(self.prompt_bufnr, 0, 0, 0, #self._prefix_padding, {})
+    vim.api.nvim_buf_set_text(self.prompt_bufnr, 0, 0, 0, self._prefix_width, {})
     vim.api.nvim_buf_set_option(self.prompt_bufnr, "buftype", "")
   end
   self.prompt_prefix = new_prefix
@@ -940,68 +956,33 @@ function Picker:set_selection(row)
   local entry = self:_get_entry_from_row(row)
   state.set_global_key("selected_entry", entry)
 
+  -- No entries, so just be done
   if not entry then
     return
   end
 
+  -- If the entry is the current selection_entry, then just quit
+  if self._selection_entry == entry and self._selection_row == row then
+    return
+  end
+
+  -- Check if previous selection is still visible
   local old_entry
+  if self._selection_entry and self.manager:find_entry(self._selection_entry) then
+    -- Find old selection, and update prefix and highlights
+    old_entry = self._selection_entry
 
-  -- TODO: Probably should figure out what the rows are that made this happen...
-  --        Probably something with setting a row that's too high for this?
-  --        Not sure.
-  local set_ok, set_errmsg = pcall(function()
-    local prompt = self:_get_prompt()
-
-    -- Check if previous selection is still visible
-    if self._selection_entry and self.manager:find_entry(self._selection_entry) then
-      -- Find old selection, and update prefix and highlights
-      old_entry = self._selection_entry
-      local old_row = self:get_row(self.manager:find_entry(old_entry))
-
-      self._selection_entry = entry
-
-      if old_row >= 0 then
-        local caret = self:update_prefix(old_entry, old_row)
-        self.highlighter:hi_multiselect(old_row, caret, self:is_multi_selected(old_entry))
-      end
-    else
-      self._selection_entry = entry
+    local old_row = self:get_row(self.manager:find_entry(old_entry))
+    if old_row >= 0 then
+      self.highlighter:hi_multiselect(old_row, self:is_multi_selected(old_entry))
     end
-
-    local caret = self:update_prefix(entry, row)
-
-    local display, display_highlights = entry_display.resolve(self, entry)
-    display = self._prefix_padding .. display
-
-    -- TODO: You should go back and redraw the highlights for this line from the sorter.
-    -- That's the only smart thing to do.
-    if not a.nvim_buf_is_valid(results_bufnr) then
-      log.debug "Invalid buf somehow..."
-      return
-    end
-
-    -- TODO(fps): Was this actually what I had?
-    -- a.nvim_buf_set_lines(results_bufnr, row, row + 1, false, { display })
-
-    -- don't highlight any whitespace at the end of caret
-    self.highlighter:hi_selection(row, caret:match "(.*%S)")
-    self.highlighter:hi_sorter(row, prompt, display)
-    self.highlighter:hi_display(row, caret, display_highlights)
-    self.highlighter:hi_multiselect(row, caret, self:is_multi_selected(entry))
-  end)
-
-  if not set_ok then
-    log.debug(set_errmsg)
-    return
   end
 
-  if old_entry == entry and self._selection_row == row then
-    return
-  end
-
-  -- TODO: Get row & text in the same obj
   self._selection_entry = entry
   self._selection_row = row
+
+  self.highlighter:hi_selection(row)
+  self.highlighter:hi_multiselect(row, self:is_multi_selected(entry))
 
   self:refresh_previewer()
 
@@ -1102,7 +1083,6 @@ function Picker:_reset_track()
   self.stats.status = 0
 
   self.stats.filtered = 0
-  self.stats.highlights = 0
 end
 
 --- Increment the count of the tracked info at `self.stats[key]`
