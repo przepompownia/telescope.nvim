@@ -355,70 +355,10 @@ function Picker:find()
   self._on_lines = tx.send
 
   local find_id = self:_next_find_id()
-
-  local count = 0
-  local redraw = vim.schedule_wrap(function()
-    count = count + 1
-
-    if self.manager then
-      if not self.manager.dirty then
-        return
-      end
-
-      --[[
-      -------
-      |     |
-      |     |
-      |     |
-      -------
-
-      -> self.manager:window(start, finish)
-      window is a sorted list of entries, 1 -> (finish - start)
-      window has idx for each entry
-      - to calculate row for idx, use self:get_row(window_idx)
-
-      --]]
-
-      self.manager.dirty = false
-      local height = vim.api.nvim_win_get_height(self.results_win)
-      local window = self.manager:window(1 + self.offset, self.num_visible + self.offset)
-
-      self.highlighter:clear()
-
-      -- Get the contents to display and associated highlights
-      local displayed, highlights = {}, {}
-      for window_idx, entry in ipairs(window) do
-        local row = self:get_row(window_idx)
-        displayed[row], highlights[row] = self:_resolve_entry_display(entry)
-      end
-
-      -- Push display contents into lines buffer
-      local lines = {}
-      for idx = 0, height do
-        lines[idx + 1] = (displayed[idx] and self._prefix_string .. displayed[idx]) or ""
-      end
-
-      -- Display contents
-      vim.api.nvim_buf_set_lines(self.results_bufnr, 0, -1, false, lines)
-
-      local prompt = self:_get_prompt()
-      self:_do_selection(prompt)
-
-      for row, display_highlights in pairs(highlights) do
-        self.highlighter:highlight(row, {
-          prompt = prompt,
-          entry = window[row],
-          display = displayed[row],
-          display_highlights = display_highlights,
-        })
-      end
-
-      status_updater { completed = false }
-    end
-  end)
-
   self.refresher = vim.loop.new_timer()
-  self.refresher:start(0, 100, redraw)
+  self.refresher:start(0, 100, function()
+    self:_redraw()
+  end)
 
   local main_loop = async.void(function()
     self.sorter:_init()
@@ -984,45 +924,6 @@ function Picker:set_selection(row)
   -- vim.api.nvim_win_set_cursor(self.results_win, { row + 1, 0 })
 end
 
---- Update prefix for entry on a given row
-function Picker:update_prefix(entry, row)
-  local prefix = function(sel, multi)
-    local t
-    if sel then
-      t = self.selection_caret
-    else
-      t = self.entry_prefix
-    end
-    if multi and type(self.multi_icon) == "string" then
-      t = truncate(t, strdisplaywidth(t) - strdisplaywidth(self.multi_icon), "") .. self.multi_icon
-    end
-    return t
-  end
-
-  local line = vim.api.nvim_buf_get_lines(self.results_bufnr, row, row + 1, false)[1]
-  if not line or line == "" then
-    -- TODO(fps): Decide if we can just quit out of here with this.
-    -- OR we need to set something about not having any results yet
-    -- log.warn(string.format("no line found at row %d in buffer %d", row, self.results_bufnr))
-
-    return
-  end
-
-  local old_caret = string.sub(line, 0, #prefix(true)) == prefix(true) and prefix(true)
-    or string.sub(line, 0, #prefix(true, true)) == prefix(true, true) and prefix(true, true)
-    or string.sub(line, 0, #prefix(false)) == prefix(false) and prefix(false)
-    or string.sub(line, 0, #prefix(false, true)) == prefix(false, true) and prefix(false, true)
-  if old_caret == false then
-    log.warn(string.format("can't identify old caret in line: %s", line))
-    return
-  end
-
-  local pre = prefix(entry == self._selection_entry, self:is_multi_selected(entry))
-  -- Only change the first couple characters, nvim_buf_set_text leaves the existing highlights
-  -- a.nvim_buf_set_text(self.results_bufnr, row, 0, row, #old_caret, { pre })
-  return pre
-end
-
 --- Refresh the previewer based on the current `status` of the picker
 function Picker:refresh_previewer()
   local status = state.get_status(self.prompt_bufnr)
@@ -1114,6 +1015,70 @@ function Picker:close_existing_pickers()
     pcall(actions._close, prompt_bufnr, true)
   end
 end
+
+--[[
+-------
+|     |
+|     |
+|     |
+-------
+
+-> self.manager:window(start, finish)
+window is a sorted list of entries, 1 -> (finish - start)
+window has idx for each entry
+- to calculate row for idx, use self:get_row(window_idx)
+
+Goals:
+- Redraw is _always_ scheduled, so it's safe to run (but does not
+  give up control while executing)
+- Redraw is idemptotent (we can just keep running it and wasting cycles
+  but we OK)
+--]]
+Picker._redraw = vim.schedule_wrap(function(self, force)
+  if not force and not self.manager then
+    return
+  end
+
+  self:_update_status { completed = false }
+  if not force and not self.manager.dirty then
+    return
+  end
+
+  self.manager.dirty = false
+  self.highlighter:clear()
+
+  -- Dimensions
+  local height = vim.api.nvim_win_get_height(self.results_win)
+  local window = self.manager:window(1 + self.offset, self.num_visible + self.offset)
+
+  -- Get the contents to display and associated highlights
+  local displayed, highlights = {}, {}
+  for window_idx, entry in ipairs(window) do
+    local row = self:get_row(window_idx)
+    displayed[row], highlights[row] = self:_resolve_entry_display(entry)
+  end
+
+  -- Push display contents into lines buffer
+  local lines = {}
+  for idx = 0, height do
+    lines[idx + 1] = (displayed[idx] and self._prefix_string .. displayed[idx]) or ""
+  end
+
+  -- Display contents
+  vim.api.nvim_buf_set_lines(self.results_bufnr, 0, -1, false, lines)
+
+  local prompt = self:_get_prompt()
+  self:_do_selection(prompt)
+
+  for row, display_highlights in pairs(highlights) do
+    self.highlighter:highlight(row, {
+      prompt = prompt,
+      entry = window[row],
+      display = displayed[row],
+      display_highlights = display_highlights,
+    })
+  end
+end)
 
 --- Returns a function that sets virtual text for the count indicator
 --- e.g. "10/50" as "filtered"/"processed"

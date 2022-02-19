@@ -177,8 +177,13 @@ function Highlighter:hi_multiselect(row, is_selected)
   end
 
   a.nvim_buf_clear_namespace(results_bufnr, ns_telescope_multiselection, row, row + 1)
+
+  local line = a.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1]
+  if not line then
+    return
+  end
+
   if is_selected then
-    local line = a.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1]
     a.nvim_buf_set_extmark(results_bufnr, ns_telescope_multiselection, row, self.offset, {
       end_col = #line,
       hl_group = "TelescopeMultiSelection",
