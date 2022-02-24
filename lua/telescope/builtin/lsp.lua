@@ -114,7 +114,10 @@ lsp.document_symbols = function(opts)
     end
 
     if not result or vim.tbl_isempty(result) then
-      print "No results from textDocument/documentSymbol"
+      utils.notify("lsp_document_symbols", {
+        msg = "No results from textDocument/documentSymbol",
+        level = "INFO",
+      })
       return
     end
 
@@ -126,7 +129,10 @@ lsp.document_symbols = function(opts)
     end
 
     if vim.tbl_isempty(locations) then
-      print "locations table empty"
+      utils.notify("lsp_document_symbols", {
+        msg = "No document_symbol locations found",
+        level = "INFO",
+      })
       return
     end
 
@@ -162,12 +168,18 @@ lsp.code_actions = function(opts)
   )
 
   if err then
-    print("ERROR: " .. err)
+    utils.notify("lsp_code_actions", {
+      msg = err,
+      level = "WARN",
+    })
     return
   end
 
   if not results_lsp or vim.tbl_isempty(results_lsp) then
-    print "No results from textDocument/codeAction"
+    utils.notify("lsp_document_symbols", {
+      msg = "No results from textDocument/codeAction",
+      level = "WARN",
+    })
     return
   end
 
@@ -203,7 +215,10 @@ lsp.code_actions = function(opts)
   end
 
   if #results == 0 then
-    print "No code actions available"
+    utils.notify("lsp_document_symbols", {
+      msg = "No code actions available",
+      level = "INFO",
+    })
     return
   end
 
@@ -355,10 +370,13 @@ lsp.workspace_symbols = function(opts)
     end
 
     if vim.tbl_isempty(locations) then
-      print(
-        "No results from workspace/symbol. Maybe try a different query: "
-          .. "Telescope lsp_workspace_symbols query=example"
-      )
+      utils.notify("lsp_workspace_symbols", {
+        msg = {
+          "No results from workspace/symbol. Maybe try a different query: ",
+          "Telescope lsp_workspace_symbols query=example",
+        },
+        level = "INFO",
+      })
       return
     end
 
@@ -426,9 +444,15 @@ local function check_capabilities(feature, bufnr)
     return true
   else
     if #clients == 0 then
-      print "LSP: no client attached"
+      utils.notify("lsp.check_capabilities", {
+        msg = "no client attached",
+        level = "INFO",
+      })
     else
-      print("LSP: server does not support " .. feature)
+      utils.notify("lsp.check_capabilities", {
+        msg = "server does not support " .. feature,
+        level = "INFO",
+      })
     end
     return false
   end

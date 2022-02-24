@@ -106,7 +106,10 @@ utils.filter_symbols = function(results, opts)
         end
       end
     else
-      print(string.format("%s is not a valid symbol per `vim.lsp.protocol.SymbolKind`", opts.symbols))
+      utils.notify("filter_symbols", {
+        msg = string.format("%s are not valid symbols per `vim.lsp.protocol.SymbolKind`", opts.symbols),
+        level = "ERROR",
+      })
     end
   elseif type(opts.symbols) == "table" then
     opts.symbols = vim.tbl_map(string.lower, opts.symbols)
@@ -121,11 +124,17 @@ utils.filter_symbols = function(results, opts)
       else
         table.insert(mismatched_symbols, symbol)
         mismatched_symbols = table.concat(mismatched_symbols, ", ")
-        print(string.format("%s are not valid symbols per `vim.lsp.protocol.SymbolKind`", mismatched_symbols))
+        utils.notify("filter_symbols", {
+          msg = string.format("%s are not valid symbols per `vim.lsp.protocol.SymbolKind`", mismatched_symbols),
+          level = "ERROR",
+        })
       end
     end
   else
-    print "Please pass filtering symbols as either a string or a list of strings"
+    utils.notify("filter_symbols", {
+      msg = "Please pass filtering symbols as either a string or a list of strings",
+      level = "WARN",
+    })
     return
   end
 
@@ -408,7 +417,11 @@ end
 
 function utils.get_os_command_output(cmd, cwd)
   if type(cmd) ~= "table" then
-    print "Telescope: [get_os_command_output]: cmd has to be a table"
+    utils.notify("get_os_command_output", {
+      msg = "cmd has to be a table",
+      level = "ERROR",
+      report = true,
+    })
     return {}
   end
   local command = table.remove(cmd, 1)
@@ -494,5 +507,31 @@ utils.get_devicons = load_once(function()
     end
   end
 end)
+
+local title = "Telescope.nvim"
+
+--- TODO: is function name can be accessed by debug api????
+utils.notify = function(funname, opts)
+  local level = vim.log.levels[opts.level]
+  if not level then
+    error("Invalid error level", 2)
+  end
+
+  vim.notify(("[%s] %s:"):format(funname, opts.msg), level, {
+    title = title,
+    on_open = function()
+      if opts.report then
+        vim.loop.new_timer():start(2000, 0, function()
+          local message = "Previous error shouldn't have happend. Please Report"
+          vim.notify(message, level, { title = title, timeout = 3000 })
+        end)
+      end
+    end,
+  })
+  if opts.panic then
+    -- TODO: should we just panic with something wrong happend?
+    error(opts.msg, 2)
+  end
+end
 
 return utils

@@ -5,6 +5,7 @@ local finders = require "telescope.finders"
 local previewers = require "telescope.previewers"
 local pickers = require "telescope.pickers"
 local sorters = require "telescope.sorters"
+local utils = require "telescope.utils"
 
 local WIP = {}
 
@@ -73,7 +74,10 @@ WIP.reloader = function(opts)
 
         actions.close(prompt_bufnr)
 
-        print(vim.inspect(selection))
+        utils.notify("reloader", {
+          msg = vim.inspect(selection),
+          level = "TRACE",
+        })
       end
 
       map("i", "<CR>", reload_package)
