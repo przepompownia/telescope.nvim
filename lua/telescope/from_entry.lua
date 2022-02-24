@@ -21,7 +21,7 @@ function from_entry.path(entry, validate)
   end
   if path == nil then
     utils.notify("from_entry.path", {
-      msg = "Invalid Entry:" .. vim.inspect(entry),
+      msg = ("Invalid Entry: '%s'"):format(vim.inspect(entry)),
       level = "ERROR",
       report = true,
     })

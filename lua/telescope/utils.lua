@@ -107,7 +107,7 @@ utils.filter_symbols = function(results, opts)
       end
     else
       utils.notify("filter_symbols", {
-        msg = string.format("%s are not valid symbols per `vim.lsp.protocol.SymbolKind`", opts.symbols),
+        msg = string.format("`%s` are not valid symbols per `vim.lsp.protocol.SymbolKind`", opts.symbols),
         level = "ERROR",
       })
     end
@@ -125,7 +125,7 @@ utils.filter_symbols = function(results, opts)
         table.insert(mismatched_symbols, symbol)
         mismatched_symbols = table.concat(mismatched_symbols, ", ")
         utils.notify("filter_symbols", {
-          msg = string.format("%s are not valid symbols per `vim.lsp.protocol.SymbolKind`", mismatched_symbols),
+          msg = string.format("'%s' are not valid symbols per `vim.lsp.protocol.SymbolKind`", mismatched_symbols),
           level = "ERROR",
         })
       end
