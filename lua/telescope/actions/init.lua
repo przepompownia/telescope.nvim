@@ -153,7 +153,7 @@ function actions.results_scrolling_down(prompt_bufnr)
 end
 
 function actions.center(_)
-  vim.cmd ":normal! zz"
+  vim.cmd [[:normal! zz]]
 end
 
 actions.select_default = {

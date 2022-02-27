@@ -124,7 +124,7 @@ function Highlighter:hi_sorter(row, prompt, display)
         end_col = self.offset + finish,
         hl_group = highlight,
         priority = SORTER_HIGHLIGHTS_PRIORITY,
-        strict = true,
+        strict = false,
       })
     end
   end

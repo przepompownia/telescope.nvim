@@ -23,7 +23,6 @@ local MultiSelect = require "telescope.pickers.multi"
 
 local get_default = utils.get_default
 
-local truncate = require("plenary.strings").truncate
 local strdisplaywidth = require("plenary.strings").strdisplaywidth
 
 local ns_telescope_prompt = a.nvim_create_namespace "telescope_prompt"
@@ -351,92 +350,27 @@ function Picker:find()
     return self:_update_status(opts)
   end
 
-  local tx, rx = channel.mpsc()
-  self._on_lines = tx.send
-
   local find_id = self:_next_find_id()
   self.refresher = vim.loop.new_timer()
   self.refresher:start(0, 100, function()
     self:_redraw()
   end)
 
-  local main_loop = async.void(function()
-    self.sorter:_init()
-
-    -- Do filetype last, so that users can register at the last second.
-    pcall(a.nvim_buf_set_option, prompt_bufnr, "filetype", "TelescopePrompt")
-    pcall(a.nvim_buf_set_option, results_bufnr, "filetype", "TelescopeResults")
-
-    -- TODO(async): I wonder if this should actually happen _before_ we nvim_buf_attach.
-    -- This way the buffer would always start with what we think it should when we start the loop.
-    if self.initial_mode == "insert" or self.initial_mode == "normal" then
-      -- required for set_prompt to work adequately
-      vim.cmd [[startinsert!]]
-      if self.default_text then
-        self:set_prompt(self.default_text)
-      end
-      if self.initial_mode == "normal" then
-        -- otherwise (i) insert mode exitted faster than `picker:set_prompt`; (ii) cursor on wrong pos
-        await_schedule(function()
-          vim.cmd [[stopinsert]]
-        end)
-      end
-    else
-      error("Invalid setting for initial_mode: " .. self.initial_mode)
-    end
-
-    await_schedule()
-
-    while true do
-      -- Wait for the next input
-      rx.last()
-      await_schedule()
-
-      self:_reset_track()
-
-      if not vim.api.nvim_buf_is_valid(prompt_bufnr) then
-        log.debug("ON_LINES: Invalid prompt_bufnr", prompt_bufnr)
-        return
-      end
-
-      local start_time = vim.loop.hrtime()
-      local prompt = self:_get_next_filtered_prompt()
-
-      if self.cache_picker == false or not (self.cache_picker.is_cached == true) then
-        self.sorter:_start(prompt)
-        self.manager = EntryManager:new(self.num_visible)
-
-        local process_result = self:get_result_processor(find_id, prompt)
-        local process_complete = self:get_result_completor(self.results_bufnr, find_id, prompt, status_updater)
-
-        local ok, msg = pcall(function()
-          self.finder(prompt, process_result, process_complete)
-        end)
-
-        if not ok then
-          log.warn("Finder failed with msg: ", msg)
-        end
-
-        local diff_time = (vim.loop.hrtime() - start_time) / 1e6
-        if self.debounce and diff_time < self.debounce then
-          self._sleeping = true
-          async.util.sleep(self.debounce - diff_time)
-          self._sleeping = false
-        end
-      else
-        -- TODO(scroll): This can only happen once, I don't like where it is.
-        self:_resume_picker()
-      end
-    end
-  end)
-
+  local rx
+  self._tx, rx = channel.mpsc()
   -- Register attach
   vim.api.nvim_buf_attach(prompt_bufnr, false, {
-    on_lines = function(...)
+    on_lines = function()
       find_id = self:_next_find_id()
 
       status_updater { completed = false }
-      self._on_lines(...)
+      self._tx.send()
+
+      --TODO: Determine if this is good because maybe this makes more sense
+      -- i don't think do_seleciton should happen in redraw?... not sure.
+      -- vim.schedule(function()
+      --   self:_do_selection(self:_get_prompt())
+      -- end)
     end,
 
     on_detach = function()
@@ -485,8 +419,74 @@ function Picker:find()
 
   mappings.apply_keymap(prompt_bufnr, self.attach_mappings, config.values.mappings)
 
-  tx.send()
-  main_loop()
+  async.void(function()
+    self.sorter:_init()
+
+    -- Do filetype last, so that users can register at the last second.
+    pcall(a.nvim_buf_set_option, prompt_bufnr, "filetype", "TelescopePrompt")
+    pcall(a.nvim_buf_set_option, results_bufnr, "filetype", "TelescopeResults")
+
+    -- TODO(async): I wonder if this should actually happen _before_ we nvim_buf_attach.
+    -- This way the buffer would always start with what we think it should when we start the loop.
+    if self.initial_mode == "insert" or self.initial_mode == "normal" then
+      -- required for set_prompt to work adequately
+      vim.cmd [[startinsert!]]
+      if self.default_text then
+        self:set_prompt(self.default_text)
+      end
+      if self.initial_mode == "normal" then
+        -- otherwise (i) insert mode exitted faster than `picker:set_prompt`; (ii) cursor on wrong pos
+        await_schedule(function()
+          vim.cmd [[stopinsert]]
+        end)
+      end
+    else
+      error("Invalid setting for initial_mode: " .. self.initial_mode)
+    end
+
+    await_schedule()
+
+    while true do
+      -- Wait for the next input
+      rx.last()
+      await_schedule()
+
+      self:_reset_track()
+
+      if not vim.api.nvim_buf_is_valid(prompt_bufnr) then
+        return
+      end
+
+      local start_time = vim.loop.hrtime()
+      local prompt = self:_get_next_filtered_prompt()
+
+      if self.cache_picker == false or not (self.cache_picker.is_cached == true) then
+        self.sorter:_start(prompt)
+        self.manager = EntryManager:new(self.num_visible)
+
+        local process_result = self:get_result_processor(find_id, prompt)
+        local process_complete = self:get_result_completor(self.results_bufnr, find_id, prompt, status_updater)
+
+        local ok, msg = pcall(function()
+          self.finder(prompt, process_result, process_complete)
+        end)
+
+        if not ok then
+          log.warn("Finder failed with msg: ", msg)
+        end
+
+        local diff_time = (vim.loop.hrtime() - start_time) / 1e6
+        if self.debounce and diff_time < self.debounce then
+          self._sleeping = true
+          async.util.sleep(self.debounce - diff_time)
+          self._sleeping = false
+        end
+      else
+        -- TODO(scroll): This can only happen once, I don't like where it is.
+        self:_resume_picker()
+      end
+    end
+  end)()
 end
 
 --- A helper function to update picker windows when layout options are changed
@@ -592,7 +592,7 @@ function Picker:full_layout_update()
 
   -- update scrolled position
   local buf_maxline = #vim.api.nvim_buf_get_lines(self.results_bufnr, 0, -1, false)
-  update_scroll(self.results_win, oldinfo, oldcursor, self.sorting_strategy, buf_maxline)
+  -- update_scroll(self.results_win, oldinfo, oldcursor, self.sorting_strategy, buf_maxline)
 end
 
 -- TODO: update multi-select with the correct tag name when available
@@ -701,12 +701,36 @@ end
 --- Move the current selection by `change` steps
 ---@param change number
 function Picker:move_selection(change)
-  local original = self:get_selection_row()
+  -- local original = self:get_selection_row()
+  --
+  -- self:set_selection(self:get_selection_row() + change)
+  -- if original then
+  --   self.highlighter:highlight(original, {})
+  -- end
 
-  self:set_selection(self:get_selection_row() + change)
-  if original then
-    self.highlighter:highlight(original, {})
+  -- local original = self:get_selection_row()
+
+  -- TODO: This isn't quite right. I can get stuck :'(
+  -- I think we just want to do it with the change as positive or negative
+  -- and then also just delete a bunch of this other random stuff.
+  --
+  -- it's so confusing :'(
+
+  local new_row = self:get_selection_row() + change
+  if new_row >= self.num_visible then
+    self.offset = math.min(self.offset + new_row - self.num_visible + 1, self.num_visible - 1)
+    self:set_selection(self.num_visible - 1)
+  elseif new_row < 0 then
+    self.offset = math.max(self.offset - 1, 0)
+    self:set_selection(0)
+  else
+    self:set_selection(new_row)
   end
+  -- self:_redraw(true)
+
+  -- if original then
+  --   self.highlighter:highlight(original, {})
+  -- end
 end
 
 function Picker:_resolve_entry_display(entry)
@@ -851,12 +875,15 @@ function Picker:refresh(finder, opts)
     self._multi = vim.F.if_nil(opts.multi, MultiSelect:new())
   end
 
-  self._on_lines(nil, nil, nil, 0, 1)
+  self._tx.send()
 end
 
 ---Set the selection to the provided `row`
 ---@param row number
 function Picker:set_selection(row)
+  -- print("Setting selection to:", debug.traceback(row))
+  print("Setting selection to:", self.offset, row)
+
   if not self.manager then
     return
   end
@@ -869,7 +896,7 @@ function Picker:set_selection(row)
     if not self:can_select_row(self:get_selection_row()) then
       row = self:get_row(self.manager:num_results())
     else
-      log.trace("Cannot select row:", row, self.manager:num_results(), self.num_visible)
+      error(string.format("Cannot select row: %s %s %s", row, self.manager:num_results(), self.num_visible))
       return
     end
   end
@@ -896,32 +923,30 @@ function Picker:set_selection(row)
   end
 
   -- If the entry is the current selection_entry, then just quit
-  if self._selection_entry == entry and self._selection_row == row then
-    return
-  end
+  -- if self._selection_entry == entry and self._selection_row == row then
+  --   return
+  -- end
 
-  -- Check if previous selection is still visible
-  local old_entry
-  if self._selection_entry and self.manager:find_entry(self._selection_entry) then
-    -- Find old selection, and update prefix and highlights
-    old_entry = self._selection_entry
+  -- Check if previous selection is still visible and valid
+  -- if self._selection_entry and self.manager:find_entry(self._selection_entry) then
+  --   -- Find old selection, and update prefix and highlights
+  --   local old_entry = self._selection_entry
+  --
+  --   local old_row = self:get_row(self.manager:find_entry(old_entry))
+  --   if old_row >= 0 then
+  --     self.highlighter:hi_multiselect(old_row, self:is_multi_selected(old_entry))
+  --   end
+  -- end
 
-    local old_row = self:get_row(self.manager:find_entry(old_entry))
-    if old_row >= 0 then
-      self.highlighter:hi_multiselect(old_row, self:is_multi_selected(old_entry))
-    end
-  end
+  self:_redraw { force = true }
 
   self._selection_entry = entry
   self._selection_row = row
-
   self.highlighter:highlight(row, {
     skip_display = true,
   })
 
   self:refresh_previewer()
-
-  -- vim.api.nvim_win_set_cursor(self.results_win, { row + 1, 0 })
 end
 
 --- Refresh the previewer based on the current `status` of the picker
@@ -1034,13 +1059,14 @@ Goals:
 - Redraw is idemptotent (we can just keep running it and wasting cycles
   but we OK)
 --]]
-Picker._redraw = vim.schedule_wrap(function(self, force)
-  if not force and not self.manager then
+Picker._redraw = vim.schedule_wrap(function(self, opts)
+  opts = opts or {}
+  if not opts.force and not self.manager then
     return
   end
 
   self:_update_status { completed = false }
-  if not force and not self.manager.dirty then
+  if not opts.force and not self.manager.dirty then
     return
   end
 
@@ -1068,8 +1094,6 @@ Picker._redraw = vim.schedule_wrap(function(self, force)
   vim.api.nvim_buf_set_lines(self.results_bufnr, 0, -1, false, lines)
 
   local prompt = self:_get_prompt()
-  self:_do_selection(prompt)
-
   for row, display_highlights in pairs(highlights) do
     self.highlighter:highlight(row, {
       prompt = prompt,
@@ -1078,6 +1102,10 @@ Picker._redraw = vim.schedule_wrap(function(self, force)
       display_highlights = display_highlights,
     })
   end
+
+  -- vim.api.nvim_win_set_cursor
+  -- print("Setting win cursor", self:get_selection_row() + 1)
+  -- vim.api.nvim_win_set_cursor(self.results_win, { self:get_selection_row() + 1, 0 })
 end)
 
 --- Returns a function that sets virtual text for the count indicator
@@ -1158,9 +1186,9 @@ function Picker:get_result_processor(find_id, prompt)
     -- Only on the first addition do we want to set the selection.
     -- This allows us to handle moving the cursor to the bottom or top of the window
     -- depending on the strategy.
-    if count == 1 then
-      self:_do_selection(prompt)
-    end
+    -- if count == 1 then
+    --   self:_do_selection(prompt)
+    -- end
   end
 end
 
@@ -1187,6 +1215,8 @@ function Picker:get_result_completor(results_bufnr, find_id, prompt, status_upda
 end
 
 function Picker:_do_selection(prompt)
+  self.offset = 0
+
   local selection_strategy = self.selection_strategy or "reset"
   -- TODO: Either: always leave one result or make sure we actually clean up the results when nothing matches
   if selection_strategy == "row" then
