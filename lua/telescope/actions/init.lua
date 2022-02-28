@@ -1010,7 +1010,7 @@ actions.which_key = function(prompt_bufnr, opts)
   a.nvim_win_set_option(km_win_id, "winblend", opts.winblend)
   a.nvim_win_set_option(km_win_id, "foldenable", false)
 
-  vim.api.nvim_define_autocmd {
+  vim.api.nvim_create_autocmd {
     event = "BufLeave",
     once = true,
     callback = function()
@@ -1051,7 +1051,7 @@ actions.which_key = function(prompt_bufnr, opts)
   -- only set up autocommand after showing preview completed
   if opts.close_with_action then
     vim.schedule(function()
-      vim.api.nvim_define_autocmd {
+      vim.api.nvim_create_autocmd {
         event = "User TelescopeKeymap",
         once = true,
         callback = function()

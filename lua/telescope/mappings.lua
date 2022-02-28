@@ -223,7 +223,7 @@ mappings.apply_keymap = function(prompt_bufnr, attach_mappings, buffer_keymap)
     end
   end
 
-  vim.api.nvim_define_autocmd {
+  vim.api.nvim_create_autocmd {
     event = "BufDelete",
     buffer = prompt_bufnr,
     callback = function()
