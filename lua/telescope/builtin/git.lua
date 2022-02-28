@@ -147,7 +147,7 @@ git.bcommits = function(opts)
         vim.bo.filetype = ft
         vim.cmd "diffthis"
 
-        vim.api.nvim_create_autocmd {
+        vim.api.nvim_create_autocmd("WinClosed", {
           event = "WinClosed",
           buffer = bufnr,
           nested = true,
@@ -155,7 +155,7 @@ git.bcommits = function(opts)
           function()
             vim.api.nvim_buf_delete(bufnr, { force = true })
           end,
-        }
+        })
       end
 
       actions.select_vertical:replace(function(prompt_bufnr)
