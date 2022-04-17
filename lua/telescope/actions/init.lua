@@ -5,6 +5,55 @@
 
 ---@brief [[
 --- Actions functions that are useful for people creating their own mappings.
+---
+--- Actions can be either normal functions that expect the prompt_bufnr as
+--- first argument (1) or they can be a custom telescope type called "action" (2).
+---
+--- (1) The `prompt_bufnr` of a normal function denotes the identifier of your
+--- picker which can be used to access the picker state. In practice, users
+--- most commonly access from both picker and global state via the following:
+---
+--- <code>
+--- -- for utility functions
+--- local action_state = require "telescope.actions.state"
+---
+--- local actions = {}
+--- actions.do_stuff = function(prompt_bufnr)
+---   local current_picker = action_state.get_current_picker(prompt_bufnr) -- picker state
+---   local entry = action_state.get_selected_entry()
+--- end
+--- </code>
+---
+--- See |telescope.actions.state| for more information.
+---
+--- (2) To transform a module of functions into a module of "action"s, you need
+--- to do the following:
+---
+--- <code>
+--- local transform_mod = require("telescope.actions.mt").transform_mod
+---
+--- local mod = {}
+--- mod.a1 = function(prompt_bufnr)
+---   -- your code goes here
+---   -- You can access the picker/global state as described above in (1).
+--- end
+---
+--- mod.a2 = function(prompt_bufnr)
+---   -- your code goes here
+--- end
+--- mod = transform_mod(mod)
+---
+--- -- Now the following is possible. This means that actions a2 will be executed
+--- -- after action a1. You can chain as many actions as you want.
+--- local action = mod.a1 + mod.a2
+--- action(bufnr)
+--- </code>
+---
+--- Another interesing thing to do is that these actions now have functions you
+--- can call. These functions include `:replace(f)`, `:replace_if(f, c)`,
+--- `replace_map(tbl)` and `enhance(tbl)`. More information on these functions
+--- can be found in the `developers.md` and `lua/tests/automated/action_spec.lua`
+--- file.
 ---@brief ]]
 
 local a = vim.api
@@ -32,33 +81,33 @@ local actions = setmetatable({}, {
 
 --- Move the selection to the next entry
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.move_selection_next(prompt_bufnr)
+actions.move_selection_next = function(prompt_bufnr)
   action_set.shift_selection(prompt_bufnr, 1)
 end
 
 --- Move the selection to the previous entry
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.move_selection_previous(prompt_bufnr)
+actions.move_selection_previous = function(prompt_bufnr)
   action_set.shift_selection(prompt_bufnr, -1)
 end
 
 --- Move the selection to the entry that has a worse score
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.move_selection_worse(prompt_bufnr)
+actions.move_selection_worse = function(prompt_bufnr)
   local picker = action_state.get_current_picker(prompt_bufnr)
   action_set.shift_selection(prompt_bufnr, p_scroller.worse(picker.sorting_strategy))
 end
 
 --- Move the selection to the entry that has a better score
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.move_selection_better(prompt_bufnr)
+actions.move_selection_better = function(prompt_bufnr)
   local picker = action_state.get_current_picker(prompt_bufnr)
   action_set.shift_selection(prompt_bufnr, p_scroller.better(picker.sorting_strategy))
 end
 
 --- Move to the top of the picker
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.move_to_top(prompt_bufnr)
+actions.move_to_top = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   current_picker:set_selection(
     p_scroller.top(current_picker.sorting_strategy, current_picker.max_results, current_picker.manager:num_results())
@@ -67,7 +116,7 @@ end
 
 --- Move to the middle of the picker
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.move_to_middle(prompt_bufnr)
+actions.move_to_middle = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   current_picker:set_selection(
     p_scroller.middle(current_picker.sorting_strategy, current_picker.max_results, current_picker.manager:num_results())
@@ -76,7 +125,7 @@ end
 
 --- Move to the bottom of the picker
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.move_to_bottom(prompt_bufnr)
+actions.move_to_bottom = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   current_picker:set_selection(
     p_scroller.bottom(current_picker.sorting_strategy, current_picker.max_results, current_picker.manager:num_results())
@@ -85,21 +134,21 @@ end
 
 --- Add current entry to multi select
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.add_selection(prompt_bufnr)
+actions.add_selection = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   current_picker:add_selection(current_picker:get_selection_row())
 end
 
 --- Remove current entry from multi select
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.remove_selection(prompt_bufnr)
+actions.remove_selection = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   current_picker:remove_selection(current_picker:get_selection_row())
 end
 
 --- Toggle current entry status for multi select
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.toggle_selection(prompt_bufnr)
+actions.toggle_selection = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   current_picker:toggle_selection(current_picker:get_selection_row())
 end
@@ -107,63 +156,94 @@ end
 --- Multi select all entries.
 --- - Note: selected entries may include results not visible in the results popup.
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.select_all(prompt_bufnr)
+actions.select_all = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   action_utils.map_entries(prompt_bufnr, function(entry, _, row)
     if not current_picker._multi:is_selected(entry) then
       current_picker._multi:add(entry)
       if current_picker:can_select_row(row) then
+        local caret = current_picker:update_prefix(entry, row)
+        if current_picker._selection_entry == entry and current_picker._selection_row == row then
+          current_picker.highlighter:hi_selection(row, caret:match "(.*%S)")
+        end
         current_picker.highlighter:hi_multiselect(row, current_picker._multi:is_selected(entry))
       end
     end
   end)
+  current_picker:get_status_updater(current_picker.prompt_win, current_picker.prompt_bufnr)()
 end
 
 --- Drop all entries from the current multi selection.
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.drop_all(prompt_bufnr)
+actions.drop_all = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   action_utils.map_entries(prompt_bufnr, function(entry, _, row)
     current_picker._multi:drop(entry)
     if current_picker:can_select_row(row) then
+      local caret = current_picker:update_prefix(entry, row)
+      if current_picker._selection_entry == entry and current_picker._selection_row == row then
+        current_picker.highlighter:hi_selection(row, caret:match "(.*%S)")
+      end
       current_picker.highlighter:hi_multiselect(row, current_picker._multi:is_selected(entry))
     end
   end)
+  current_picker:get_status_updater(current_picker.prompt_win, current_picker.prompt_bufnr)()
 end
 
 --- Toggle multi selection for all entries.
 --- - Note: toggled entries may include results not visible in the results popup.
 ---@param prompt_bufnr number: The prompt bufnr
-function actions.toggle_all(prompt_bufnr)
+actions.toggle_all = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   action_utils.map_entries(prompt_bufnr, function(entry, _, row)
     current_picker._multi:toggle(entry)
     if current_picker:can_select_row(row) then
+      local caret = current_picker:update_prefix(entry, row)
+      if current_picker._selection_entry == entry and current_picker._selection_row == row then
+        current_picker.highlighter:hi_selection(row, caret:match "(.*%S)")
+      end
       current_picker.highlighter:hi_multiselect(row, current_picker._multi:is_selected(entry))
     end
   end)
+  current_picker:get_status_updater(current_picker.prompt_win, current_picker.prompt_bufnr)()
 end
 
-function actions.preview_scrolling_up(prompt_bufnr)
+--- Scroll the preview window up
+---@param prompt_bufnr number: The prompt bufnr
+actions.preview_scrolling_up = function(prompt_bufnr)
   action_set.scroll_previewer(prompt_bufnr, -1)
 end
 
-function actions.preview_scrolling_down(prompt_bufnr)
+--- Scroll the preview window down
+---@param prompt_bufnr number: The prompt bufnr
+actions.preview_scrolling_down = function(prompt_bufnr)
   action_set.scroll_previewer(prompt_bufnr, 1)
 end
 
-function actions.results_scrolling_up(prompt_bufnr)
+--- Scroll the results window up
+---@param prompt_bufnr number: The prompt bufnr
+actions.results_scrolling_up = function(prompt_bufnr)
   action_set.scroll_results(prompt_bufnr, -1)
 end
 
-function actions.results_scrolling_down(prompt_bufnr)
+--- Scroll the results window down
+---@param prompt_bufnr number: The prompt bufnr
+actions.results_scrolling_down = function(prompt_bufnr)
   action_set.scroll_results(prompt_bufnr, 1)
 end
 
-function actions.center(_)
+--- Center the cursor in the window, can be used after selecting a file to edit
+--- You can just map `actions.select_default + actions.center`
+---@param prompt_bufnr number: The prompt bufnr
+actions.center = function(prompt_bufnr)
   vim.cmd ":normal! zz"
 end
 
+--- Perform default action on selection, usually something like<br>
+--- `:edit <selection>`
+---
+--- i.e. open the selection in the current buffer
+---@param prompt_bufnr number: The prompt bufnr
 actions.select_default = {
   pre = function(prompt_bufnr)
     action_state.get_current_history():append(
@@ -176,6 +256,11 @@ actions.select_default = {
   end,
 }
 
+--- Perform 'horizontal' action on selection, usually something like<br>
+---`:new <selection>`
+---
+--- i.e. open the selection in a new horizontal split
+---@param prompt_bufnr number: The prompt bufnr
 actions.select_horizontal = {
   pre = function(prompt_bufnr)
     action_state.get_current_history():append(
@@ -188,6 +273,11 @@ actions.select_horizontal = {
   end,
 }
 
+--- Perform 'vertical' action on selection, usually something like<br>
+---`:vnew <selection>`
+---
+--- i.e. open the selection in a new vertical split
+---@param prompt_bufnr number: The prompt bufnr
 actions.select_vertical = {
   pre = function(prompt_bufnr)
     action_state.get_current_history():append(
@@ -200,6 +290,11 @@ actions.select_vertical = {
   end,
 }
 
+--- Perform 'tab' action on selection, usually something like<br>
+---`:tabedit <selection>`
+---
+--- i.e. open the selection in a new tab
+---@param prompt_bufnr number: The prompt bufnr
 actions.select_tab = {
   pre = function(prompt_bufnr)
     action_state.get_current_history():append(
@@ -215,28 +310,49 @@ actions.select_tab = {
 -- TODO: consider adding float!
 -- https://github.com/nvim-telescope/telescope.nvim/issues/365
 
-function actions.file_edit(prompt_bufnr)
+--- Perform file edit on selection, usually something like<br>
+--- `:edit <selection>`
+---@param prompt_bufnr number: The prompt bufnr
+actions.file_edit = function(prompt_bufnr)
   return action_set.edit(prompt_bufnr, "edit")
 end
 
-function actions.file_split(prompt_bufnr)
+--- Perform file split on selection, usually something like<br>
+--- `:new <selection>`
+---@param prompt_bufnr number: The prompt bufnr
+actions.file_split = function(prompt_bufnr)
   return action_set.edit(prompt_bufnr, "new")
 end
 
-function actions.file_vsplit(prompt_bufnr)
+--- Perform file vsplit on selection, usually something like<br>
+--- `:vnew <selection>`
+---@param prompt_bufnr number: The prompt bufnr
+actions.file_vsplit = function(prompt_bufnr)
   return action_set.edit(prompt_bufnr, "vnew")
 end
 
-function actions.file_tab(prompt_bufnr)
+--- Perform file tab on selection, usually something like<br>
+--- `:tabedit <selection>`
+---@param prompt_bufnr number: The prompt bufnr
+actions.file_tab = function(prompt_bufnr)
   return action_set.edit(prompt_bufnr, "tabedit")
 end
 
-function actions.close_pum(_)
+actions.close_pum = function(_)
   if 0 ~= vim.fn.pumvisible() then
     vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<c-y>", true, true, true), "n", true)
   end
 end
 
+--- Close the Telescope window, usually used within an action
+---@param prompt_bufnr number: The prompt bufnr
+actions.close = function(prompt_bufnr)
+  actions._close(prompt_bufnr, false)
+end
+
+--- Close the Telescope window and specify if you want to keep insert mode or not
+---@param prompt_bufnr number: The prompt bufnr
+---@param keepinsert boolean: Remain in INSERT mode if true
 actions._close = function(prompt_bufnr, keepinsert)
   action_state.get_current_history():reset()
   local picker = action_state.get_current_picker(prompt_bufnr)
@@ -253,24 +369,29 @@ actions._close = function(prompt_bufnr, keepinsert)
   pcall(a.nvim_set_current_win, original_win_id)
 end
 
-function actions.close(prompt_bufnr)
-  actions._close(prompt_bufnr, false)
-end
-
-actions.edit_command_line = function(prompt_bufnr)
+local set_edit_line = function(prompt_bufnr, fname, prefix, postfix)
+  postfix = vim.F.if_nil(postfix, "")
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection(fname)
     return
   end
   actions.close(prompt_bufnr)
-  a.nvim_feedkeys(a.nvim_replace_termcodes(":" .. selection.value, true, false, true), "t", true)
+  a.nvim_feedkeys(a.nvim_replace_termcodes(prefix .. selection.value .. postfix, true, false, true), "t", true)
 end
 
+--- Set a value in the command line and dont run it, making it editable.
+---@param prompt_bufnr number: The prompt bufnr
+actions.edit_command_line = function(prompt_bufnr)
+  set_edit_line(prompt_bufnr, "actions.edit_command_line", ":")
+end
+
+--- Set a value in the command line and run it
+---@param prompt_bufnr number: The prompt bufnr
 actions.set_command_line = function(prompt_bufnr)
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.set_command_line"
     return
   end
   actions.close(prompt_bufnr)
@@ -278,26 +399,20 @@ actions.set_command_line = function(prompt_bufnr)
   vim.cmd(selection.value)
 end
 
+--- Set a value in the search line and dont search for it, making it editable.
+---@param prompt_bufnr number: The prompt bufnr
 actions.edit_search_line = function(prompt_bufnr)
-  local selection = action_state.get_selected_entry()
-  if selection == nil then
-    print "[telescope] Nothing currently selected"
-    return
-  end
-  actions.close(prompt_bufnr)
-  a.nvim_feedkeys(a.nvim_replace_termcodes("/" .. selection.value, true, false, true), "t", true)
+  set_edit_line(prompt_bufnr, "actions.edit_search_line", "/")
 end
 
+--- Set a value in the search line and search for it
+---@param prompt_bufnr number: The prompt bufnr
 actions.set_search_line = function(prompt_bufnr)
-  local selection = action_state.get_selected_entry()
-  if selection == nil then
-    print "[telescope] Nothing currently selected"
-    return
-  end
-  actions.close(prompt_bufnr)
-  a.nvim_feedkeys(a.nvim_replace_termcodes("/" .. selection.value .. "<CR>", true, false, true), "t", true)
+  set_edit_line(prompt_bufnr, "actions.set_search_line", "/", "<CR>")
 end
 
+--- Edit a register
+---@param prompt_bufnr number: The prompt bufnr
 actions.edit_register = function(prompt_bufnr)
   local selection = action_state.get_selected_entry()
   local picker = action_state.get_current_picker(prompt_bufnr)
@@ -320,10 +435,12 @@ actions.edit_register = function(prompt_bufnr)
   -- print(vim.inspect(picker.finder.results))
 end
 
+--- Paste the selected register into the buffer
+---@param prompt_bufnr number: The prompt bufnr
 actions.paste_register = function(prompt_bufnr)
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.paste_register"
     return
   end
 
@@ -331,25 +448,26 @@ actions.paste_register = function(prompt_bufnr)
 
   -- ensure that the buffer can be written to
   if vim.api.nvim_buf_get_option(vim.api.nvim_get_current_buf(), "modifiable") then
-    print "Paste!"
     vim.api.nvim_paste(selection.content, true, -1)
   end
 end
 
+--- Insert a symbol into the current buffer (while switching to normal mode)
+---@param prompt_bufnr number: The prompt bufnr
 actions.insert_symbol = function(prompt_bufnr)
   local symbol = action_state.get_selected_entry().value[1]
   actions.close(prompt_bufnr)
   vim.api.nvim_put({ symbol }, "", true, true)
 end
 
+--- Insert a symbol into the current buffer and keeping the insert mode.
+---@param prompt_bufnr number: The prompt bufnr
 actions.insert_symbol_i = function(prompt_bufnr)
   local symbol = action_state.get_selected_entry().value[1]
   actions._close(prompt_bufnr, true)
-  local cursor = vim.api.nvim_win_get_cursor(0)
-  vim.api.nvim_buf_set_text(0, cursor[1] - 1, cursor[2], cursor[1] - 1, cursor[2], { symbol })
   vim.schedule(function()
-    vim.api.nvim_win_set_cursor(0, { cursor[1], cursor[2] + #symbol })
-    vim.cmd [[startinsert!]]
+    vim.cmd [[startinsert]]
+    vim.api.nvim_put({ symbol }, "", true, true)
   end)
 end
 
@@ -357,7 +475,7 @@ end
 actions.insert_value = function(prompt_bufnr)
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.insert_value"
     return
   end
 
@@ -375,11 +493,17 @@ actions.git_create_branch = function(prompt_bufnr)
   local new_branch = action_state.get_current_line()
 
   if new_branch == "" then
-    print "Please enter the name of the new branch to create"
+    utils.notify("actions.git_create_branch", {
+      msg = "Missing the new branch name",
+      level = "ERROR",
+    })
   else
-    local confirmation = vim.fn.input(string.format('Create new branch "%s"? [y/n]: ', new_branch))
+    local confirmation = vim.fn.input(string.format("Create new branch '%s'? [y/n]: ", new_branch))
     if string.len(confirmation) == 0 or string.sub(string.lower(confirmation), 0, 1) ~= "y" then
-      print(string.format('Didn\'t create branch "%s"', new_branch))
+      utils.notify("actions.git_create_branch", {
+        msg = string.format("fail to create branch: '%s'", new_branch),
+        level = "ERROR",
+      })
       return
     end
 
@@ -387,11 +511,19 @@ actions.git_create_branch = function(prompt_bufnr)
 
     local _, ret, stderr = utils.get_os_command_output({ "git", "checkout", "-b", new_branch }, cwd)
     if ret == 0 then
-      print(string.format("Switched to a new branch: %s", new_branch))
+      utils.notify("actions.git_create_branch", {
+        msg = string.format("Switched to a new branch: %s", new_branch),
+        level = "INFO",
+      })
     else
-      print(
-        string.format('Error when creating new branch: %s Git returned "%s"', new_branch, table.concat(stderr, "  "))
-      )
+      utils.notify("actions.git_create_branch", {
+        msg = string.format(
+          "Error when creating new branch: '%s' Git returned '%s'",
+          new_branch,
+          table.concat(stderr, " ")
+        ),
+        level = "INFO",
+      })
     end
   end
 end
@@ -401,15 +533,21 @@ end
 actions.git_apply_stash = function(prompt_bufnr)
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.git_apply_stash"
     return
   end
   actions.close(prompt_bufnr)
   local _, ret, stderr = utils.get_os_command_output { "git", "stash", "apply", "--index", selection.value }
   if ret == 0 then
-    print("applied: " .. selection.value)
+    utils.notify("actions.git_apply_stash", {
+      msg = string.format("applied: '%s' ", selection.value),
+      level = "INFO",
+    })
   else
-    print(string.format('Error when applying: %s. Git returned: "%s"', selection.value, table.concat(stderr, "  ")))
+    utils.notify("actions.git_apply_stash", {
+      msg = string.format("Error when applying: %s. Git returned: '%s'", selection.value, table.concat(stderr, " ")),
+      level = "ERROR",
+    })
   end
 end
 
@@ -419,15 +557,25 @@ actions.git_checkout = function(prompt_bufnr)
   local cwd = action_state.get_current_picker(prompt_bufnr).cwd
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.git_checkout"
     return
   end
   actions.close(prompt_bufnr)
   local _, ret, stderr = utils.get_os_command_output({ "git", "checkout", selection.value }, cwd)
   if ret == 0 then
-    print("Checked out: " .. selection.value)
+    utils.notify("actions.git_checkout", {
+      msg = string.format("Checked out: %s", selection.value),
+      level = "INFO",
+    })
   else
-    print(string.format('Error when checking out: %s. Git returned: "%s"', selection.value, table.concat(stderr, "  ")))
+    utils.notify("actions.git_checkout", {
+      msg = string.format(
+        "Error when checking out: %s. Git returned: '%s'",
+        selection.value,
+        table.concat(stderr, " ")
+      ),
+      level = "ERROR",
+    })
   end
 end
 
@@ -439,7 +587,7 @@ actions.git_switch_branch = function(prompt_bufnr)
   local cwd = action_state.get_current_picker(prompt_bufnr).cwd
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.git_switch_branch"
     return
   end
   actions.close(prompt_bufnr)
@@ -450,9 +598,19 @@ actions.git_switch_branch = function(prompt_bufnr)
   end
   local _, ret, stderr = utils.get_os_command_output({ "git", "switch", branch }, cwd)
   if ret == 0 then
-    print("Switched to: " .. branch)
+    utils.notify("actions.git_switch_branch", {
+      msg = string.format("Switched to: '%s'", branch),
+      level = "INFO",
+    })
   else
-    print(string.format('Error when switching to: %s. Git returned: "%s"', selection.value, table.concat(stderr, "  ")))
+    utils.notify("actions.git_switch_branch", {
+      msg = string.format(
+        "Error when switching to: %s. Git returned: '%s'",
+        selection.value,
+        table.concat(stderr, " ")
+      ),
+      level = "ERORR",
+    })
   end
 end
 
@@ -461,7 +619,7 @@ local function make_git_branch_action(opts)
     local cwd = action_state.get_current_picker(prompt_bufnr).cwd
     local selection = action_state.get_selected_entry()
     if selection == nil then
-      print "[telescope] Nothing currently selected"
+      utils.__warn_no_selection(opts.action_name)
       return
     end
 
@@ -476,9 +634,15 @@ local function make_git_branch_action(opts)
     actions.close(prompt_bufnr)
     local _, ret, stderr = utils.get_os_command_output(opts.command(selection.value), cwd)
     if ret == 0 then
-      print(string.format(opts.success_message, selection.value))
+      utils.notify(opts.action_name, {
+        msg = string.format(opts.success_message, selection.value),
+        level = "INFO",
+      })
     else
-      print(string.format(opts.error_message, selection.value, table.concat(stderr, "  ")))
+      utils.notify(opts.action_name, {
+        msg = string.format(opts.error_message, selection.value, table.concat(stderr, " ")),
+        level = "ERROR",
+      })
     end
   end
 end
@@ -487,8 +651,9 @@ end
 ---@param prompt_bufnr number: The prompt bufnr
 actions.git_track_branch = make_git_branch_action {
   should_confirm = false,
+  action_name = "actions.git_track_branch",
   success_message = "Tracking branch: %s",
-  error_message = 'Error when tracking branch: %s. Git returned: "%s"',
+  error_message = "Error when tracking branch: %s. Git returned: '%s'",
   command = function(branch_name)
     return { "git", "checkout", "--track", branch_name }
   end,
@@ -498,9 +663,10 @@ actions.git_track_branch = make_git_branch_action {
 ---@param prompt_bufnr number: The prompt bufnr
 actions.git_delete_branch = make_git_branch_action {
   should_confirm = true,
+  action_name = "actions.git_delete_branch",
   confirmation_question = "Do you really wanna delete branch %s? [Y/n] ",
   success_message = "Deleted branch: %s",
-  error_message = 'Error when deleting branch: %s. Git returned: "%s"',
+  error_message = "Error when deleting branch: %s. Git returned: '%s'",
   command = function(branch_name)
     return { "git", "branch", "-D", branch_name }
   end,
@@ -510,9 +676,10 @@ actions.git_delete_branch = make_git_branch_action {
 ---@param prompt_bufnr number: The prompt bufnr
 actions.git_merge_branch = make_git_branch_action {
   should_confirm = true,
+  action_name = "actions.git_merge_branch",
   confirmation_question = "Do you really wanna merge branch %s? [Y/n] ",
   success_message = "Merged branch: %s",
-  error_message = 'Error when merging branch: %s. Git returned: "%s"',
+  error_message = "Error when merging branch: %s. Git returned: '%s'",
   command = function(branch_name)
     return { "git", "merge", branch_name }
   end,
@@ -522,9 +689,10 @@ actions.git_merge_branch = make_git_branch_action {
 ---@param prompt_bufnr number: The prompt bufnr
 actions.git_rebase_branch = make_git_branch_action {
   should_confirm = true,
+  action_name = "actions.git_rebase_branch",
   confirmation_question = "Do you really wanna rebase branch %s? [Y/n] ",
   success_message = "Rebased branch: %s",
-  error_message = 'Error when rebasing branch: %s. Git returned: "%s"',
+  error_message = "Error when rebasing branch: %s. Git returned: '%s'",
   command = function(branch_name)
     return { "git", "rebase", branch_name }
   end,
@@ -534,7 +702,7 @@ local git_reset_branch = function(prompt_bufnr, mode)
   local cwd = action_state.get_current_picker(prompt_bufnr).cwd
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.git_reset_branch"
     return
   end
 
@@ -546,9 +714,15 @@ local git_reset_branch = function(prompt_bufnr, mode)
   actions.close(prompt_bufnr)
   local _, ret, stderr = utils.get_os_command_output({ "git", "reset", mode, selection.value }, cwd)
   if ret == 0 then
-    print("Reset to: " .. selection.value)
+    utils.notify("actions.git_rebase_branch", {
+      msg = string.format("Reset to: '%s'", selection.value),
+      level = "INFO",
+    })
   else
-    print(string.format('Error when resetting to: %s. Git returned: "%s"', selection.value, table.concat(stderr, "  ")))
+    utils.notify("actions.git_rebase_branch", {
+      msg = string.format("Rest to: %s. Git returned: '%s'", selection.value, table.concat(stderr, " ")),
+      level = "ERROR",
+    })
   end
 end
 
@@ -570,11 +744,14 @@ actions.git_reset_hard = function(prompt_bufnr)
   git_reset_branch(prompt_bufnr, "--hard")
 end
 
+--- Checkout a specific file for a given sha
+---@param prompt_bufnr number: The prompt bufnr
 actions.git_checkout_current_buffer = function(prompt_bufnr)
   local cwd = action_state.get_current_picker(prompt_bufnr).cwd
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.git_checkout_current_buffer"
+
     return
   end
   actions.close(prompt_bufnr)
@@ -587,7 +764,7 @@ actions.git_staging_toggle = function(prompt_bufnr)
   local cwd = action_state.get_current_picker(prompt_bufnr).cwd
   local selection = action_state.get_selected_entry()
   if selection == nil then
-    print "[telescope] Nothing currently selected"
+    utils.__warn_no_selection "actions.git_staging_toggle"
     return
   end
   if selection.status:sub(2) == " " then
@@ -610,7 +787,7 @@ local entry_to_qf = function(entry)
 
   return {
     bufnr = entry.bufnr,
-    filename = from_entry.path(entry, false),
+    filename = from_entry.path(entry, false, false),
     lnum = vim.F.if_nil(entry.lnum, 1),
     col = vim.F.if_nil(entry.col, 1),
     text = text,
@@ -653,48 +830,56 @@ local send_all_to_qf = function(prompt_bufnr, mode, target)
 end
 
 --- Sends the selected entries to the quickfix list, replacing the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.send_selected_to_qflist = function(prompt_bufnr)
-  send_selected_to_qf(prompt_bufnr, "r")
+  send_selected_to_qf(prompt_bufnr, " ")
 end
 
 --- Adds the selected entries to the quickfix list, keeping the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.add_selected_to_qflist = function(prompt_bufnr)
   send_selected_to_qf(prompt_bufnr, "a")
 end
 
 --- Sends all entries to the quickfix list, replacing the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.send_to_qflist = function(prompt_bufnr)
-  send_all_to_qf(prompt_bufnr, "r")
+  send_all_to_qf(prompt_bufnr, " ")
 end
 
 --- Adds all entries to the quickfix list, keeping the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.add_to_qflist = function(prompt_bufnr)
   send_all_to_qf(prompt_bufnr, "a")
 end
 
 --- Sends the selected entries to the location list, replacing the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.send_selected_to_loclist = function(prompt_bufnr)
-  send_selected_to_qf(prompt_bufnr, "r", "loclist")
+  send_selected_to_qf(prompt_bufnr, " ", "loclist")
 end
 
 --- Adds the selected entries to the location list, keeping the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.add_selected_to_loclist = function(prompt_bufnr)
   send_selected_to_qf(prompt_bufnr, "a", "loclist")
 end
 
 --- Sends all entries to the location list, replacing the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.send_to_loclist = function(prompt_bufnr)
-  send_all_to_qf(prompt_bufnr, "r", "loclist")
+  send_all_to_qf(prompt_bufnr, " ", "loclist")
 end
 
 --- Adds all entries to the location list, keeping the previous entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.add_to_loclist = function(prompt_bufnr)
   send_all_to_qf(prompt_bufnr, "a", "loclist")
 end
 
 local smart_send = function(prompt_bufnr, mode, target)
   local picker = action_state.get_current_picker(prompt_bufnr)
-  if table.getn(picker:get_multi_selection()) > 0 then
+  if #picker:get_multi_selection() > 0 then
     send_selected_to_qf(prompt_bufnr, mode, target)
   else
     send_all_to_qf(prompt_bufnr, mode, target)
@@ -703,35 +888,45 @@ end
 
 --- Sends the selected entries to the quickfix list, replacing the previous entries.
 --- If no entry was selected, sends all entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.smart_send_to_qflist = function(prompt_bufnr)
-  smart_send(prompt_bufnr, "r")
+  smart_send(prompt_bufnr, " ")
 end
 
 --- Adds the selected entries to the quickfix list, keeping the previous entries.
 --- If no entry was selected, adds all entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.smart_add_to_qflist = function(prompt_bufnr)
   smart_send(prompt_bufnr, "a")
 end
 
 --- Sends the selected entries to the location list, replacing the previous entries.
 --- If no entry was selected, sends all entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.smart_send_to_loclist = function(prompt_bufnr)
-  smart_send(prompt_bufnr, "r", "loclist")
+  smart_send(prompt_bufnr, " ", "loclist")
 end
 
 --- Adds the selected entries to the location list, keeping the previous entries.
 --- If no entry was selected, adds all entries.
+---@param prompt_bufnr number: The prompt bufnr
 actions.smart_add_to_loclist = function(prompt_bufnr)
   smart_send(prompt_bufnr, "a", "loclist")
 end
 
+--- Open completion menu containing the tags which can be used to filter the results in a faster way
+---@param prompt_bufnr number: The prompt bufnr
 actions.complete_tag = function(prompt_bufnr)
   local current_picker = action_state.get_current_picker(prompt_bufnr)
   local tags = current_picker.sorter.tags
   local delimiter = current_picker.sorter._delimiter
 
   if not tags then
-    print "No tag pre-filtering set for this picker"
+    utils.notify("actions.complete_tag", {
+      msg = "No tag pre-filtering set for this picker",
+      level = "ERROR",
+    })
+
     return
   end
 
@@ -758,7 +953,10 @@ actions.complete_tag = function(prompt_bufnr)
   end
 
   if vim.tbl_isempty(filtered_tags) then
-    print "No matches found"
+    utils.notify("complete_tag", {
+      msg = "No matches found",
+      level = "INFO",
+    })
     return
   end
 
@@ -767,6 +965,8 @@ actions.complete_tag = function(prompt_bufnr)
   vim.fn.complete(col - #line, filtered_tags)
 end
 
+--- Cycle to the next search prompt in the history
+---@param prompt_bufnr number: The prompt bufnr
 actions.cycle_history_next = function(prompt_bufnr)
   local history = action_state.get_current_history()
   local current_picker = action_state.get_current_picker(prompt_bufnr)
@@ -783,6 +983,8 @@ actions.cycle_history_next = function(prompt_bufnr)
   end
 end
 
+--- Cycle to the previous search prompt in the history
+---@param prompt_bufnr number: The prompt bufnr
 actions.cycle_history_prev = function(prompt_bufnr)
   local history = action_state.get_current_history()
   local current_picker = action_state.get_current_picker(prompt_bufnr)
@@ -798,13 +1000,17 @@ actions.cycle_history_prev = function(prompt_bufnr)
   end
 end
 
---- Open the quickfix list
-actions.open_qflist = function(_)
+--- Open the quickfix list. It makes sense to use this in combination with one of the send_to_qflist actions
+--- `actions.smart_send_to_qflist + actions.open_qflist`
+---@param prompt_bufnr number: The prompt bufnr
+actions.open_qflist = function(prompt_bufnr)
   vim.cmd [[copen]]
 end
 
---- Open the location list
-actions.open_loclist = function(_)
+--- Open the location list. It makes sense to use this in combination with one of the send_to_loclist actions
+--- `actions.smart_send_to_qflist + actions.open_qflist`
+---@param prompt_bufnr number: The prompt bufnr
+actions.open_loclist = function(prompt_bufnr)
   vim.cmd [[lopen]]
 end
 
@@ -965,7 +1171,7 @@ actions.which_key = function(prompt_bufnr, opts)
   local picker = action_state.get_current_picker(prompt_bufnr)
   local prompt_row = win_central_row(picker.prompt_win)
   local results_row = win_central_row(picker.results_win)
-  local preview_row = win_central_row(picker.preview_win)
+  local preview_row = picker.preview_win and win_central_row(picker.preview_win) or results_row
   local prompt_pos = prompt_row < 0.4 * vim.o.lines
     or prompt_row < 0.6 * vim.o.lines and results_row + preview_row < vim.o.lines
 

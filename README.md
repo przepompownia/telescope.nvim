@@ -44,6 +44,10 @@ This section should guide you to run your first builtin pickers.
 [Neovim (v0.6.0)](https://github.com/neovim/neovim/releases/tag/v0.6.0) or the
 latest neovim nightly commit is required for `telescope.nvim` to work.
 
+### Required dependencies
+
+- [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) is required.
+
 ### Suggested dependencies
 
 - [BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) is required for
@@ -259,7 +263,6 @@ Built-in functions. Ready to be bound to any key you like.
 | `builtin.git_files`                 | Fuzzy search through the output of `git ls-files` command, respects .gitignore, optionally ignores untracked files                |
 | `builtin.grep_string`               | Searches for the string under your cursor in your current working directory                                                       |
 | `builtin.live_grep`                 | Search for a string in your current working directory and get results live as you type (respecting .gitignore)                    |
-| `builtin.file_browser`              | Lists files and folders in your current working directory, open files, navigate your filesystem, and create new files and folders |
 
 ### Vim Pickers
 

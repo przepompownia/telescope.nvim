@@ -13,10 +13,13 @@ local utils = require "telescope.utils"
 local lsp = {}
 
 lsp.references = function(opts)
-  local params = vim.lsp.util.make_position_params()
-  params.context = { includeDeclaration = true }
+  local filepath = vim.api.nvim_buf_get_name(opts.bufnr)
+  local lnum = vim.api.nvim_win_get_cursor(opts.winnr)[1]
+  local params = vim.lsp.util.make_position_params(opts.winnr)
+  local include_current_line = vim.F.if_nil(opts.include_current_line, false)
+  params.context = { includeDeclaration = vim.F.if_nil(opts.include_declaration, true) }
 
-  vim.lsp.buf_request(0, "textDocument/references", params, function(err, result, _ctx, _config)
+  vim.lsp.buf_request(opts.bufnr, "textDocument/references", params, function(err, result, ctx, _)
     if err then
       vim.api.nvim_err_writeln("Error when finding references: " .. err.message)
       return
@@ -24,7 +27,15 @@ lsp.references = function(opts)
 
     local locations = {}
     if result then
-      vim.list_extend(locations, vim.lsp.util.locations_to_items(result) or {})
+      local results = vim.lsp.util.locations_to_items(result, vim.lsp.get_client_by_id(ctx.client_id).offset_encoding)
+      if include_current_line then
+        locations = vim.tbl_filter(function(v)
+          -- Remove current line from result
+          return not (v.filename == filepath and v.lnum == lnum)
+        end, vim.F.if_nil(results, {}))
+      else
+        locations = vim.F.if_nil(results, {})
+      end
     end
 
     if vim.tbl_isempty(locations) then
@@ -39,6 +50,7 @@ lsp.references = function(opts)
       },
       previewer = conf.qflist_previewer(opts),
       sorter = conf.generic_sorter(opts),
+      push_cursor_on_edit = true,
     }):find()
   end)
 end
@@ -46,8 +58,8 @@ end
 local function list_or_jump(action, title, opts)
   opts = opts or {}
 
-  local params = vim.lsp.util.make_position_params()
-  vim.lsp.buf_request(0, action, params, function(err, result, _ctx, _config)
+  local params = vim.lsp.util.make_position_params(opts.winnr)
+  vim.lsp.buf_request(opts.bufnr, action, params, function(err, result, ctx, _)
     if err then
       vim.api.nvim_err_writeln("Error when executing " .. action .. " : " .. err.message)
       return
@@ -62,6 +74,8 @@ local function list_or_jump(action, title, opts)
       vim.list_extend(flattened_results, result)
     end
 
+    local offset_encoding = vim.lsp.get_client_by_id(ctx.client_id).offset_encoding
+
     if #flattened_results == 0 then
       return
     elseif #flattened_results == 1 and opts.jump_type ~= "never" then
@@ -72,9 +86,9 @@ local function list_or_jump(action, title, opts)
       elseif opts.jump_type == "vsplit" then
         vim.cmd "vnew"
       end
-      vim.lsp.util.jump_to_location(flattened_results[1])
+      vim.lsp.util.jump_to_location(flattened_results[1], offset_encoding)
     else
-      local locations = vim.lsp.util.locations_to_items(flattened_results)
+      local locations = vim.lsp.util.locations_to_items(flattened_results, offset_encoding)
       pickers.new(opts, {
         prompt_title = title,
         finder = finders.new_table {
@@ -101,20 +115,22 @@ lsp.implementations = function(opts)
 end
 
 lsp.document_symbols = function(opts)
-  local bufnr = vim.api.nvim_get_current_buf()
-  local params = vim.lsp.util.make_position_params()
-  vim.lsp.buf_request(0, "textDocument/documentSymbol", params, function(err, result, _ctx, _config)
+  local params = vim.lsp.util.make_position_params(opts.winnr)
+  vim.lsp.buf_request(opts.bufnr, "textDocument/documentSymbol", params, function(err, result, _, _)
     if err then
       vim.api.nvim_err_writeln("Error when finding document symbols: " .. err.message)
       return
     end
 
     if not result or vim.tbl_isempty(result) then
-      print "No results from textDocument/documentSymbol"
+      utils.notify("builtin.lsp_document_symbols", {
+        msg = "No results from textDocument/documentSymbol",
+        level = "INFO",
+      })
       return
     end
 
-    local locations = vim.lsp.util.symbols_to_items(result or {}, bufnr) or {}
+    local locations = vim.lsp.util.symbols_to_items(result or {}, opts.bufnr) or {}
     locations = utils.filter_symbols(locations, opts)
     if locations == nil then
       -- error message already printed in `utils.filter_symbols`
@@ -122,6 +138,10 @@ lsp.document_symbols = function(opts)
     end
 
     if vim.tbl_isempty(locations) then
+      utils.notify("builtin.lsp_document_symbols", {
+        msg = "No document_symbol locations found",
+        level = "INFO",
+      })
       return
     end
 
@@ -137,31 +157,39 @@ lsp.document_symbols = function(opts)
         tag = "symbol_type",
         sorter = conf.generic_sorter(opts),
       },
+      push_cursor_on_edit = true,
     }):find()
   end)
 end
 
 lsp.code_actions = function(opts)
-  local params = vim.F.if_nil(opts.params, vim.lsp.util.make_range_params())
+  local params = vim.F.if_nil(opts.params, vim.lsp.util.make_range_params(opts.winnr))
+  local lnum = vim.api.nvim_win_get_cursor(opts.winnr)[1]
 
   params.context = {
-    diagnostics = vim.lsp.diagnostic.get_line_diagnostics(),
+    diagnostics = vim.lsp.diagnostic.get_line_diagnostics(opts.bufnr, lnum - 1),
   }
 
   local results_lsp, err = vim.lsp.buf_request_sync(
-    0,
+    opts.bufnr,
     "textDocument/codeAction",
     params,
     vim.F.if_nil(opts.timeout, 10000)
   )
 
   if err then
-    print("ERROR: " .. err)
+    utils.notify("builtin.lsp_code_actions", {
+      msg = err,
+      level = "ERROR",
+    })
     return
   end
 
   if not results_lsp or vim.tbl_isempty(results_lsp) then
-    print "No results from textDocument/codeAction"
+    utils.notify("builtin.lsp_document_symbols", {
+      msg = "No results from textDocument/codeAction",
+      level = "INFO",
+    })
     return
   end
 
@@ -197,7 +225,10 @@ lsp.code_actions = function(opts)
   end
 
   if #results == 0 then
-    print "No code actions available"
+    utils.notify("builtin.lsp_document_symbols", {
+      msg = "No code actions available",
+      level = "INFO",
+    })
     return
   end
 
@@ -257,7 +288,7 @@ lsp.code_actions = function(opts)
       -- Fixed Java/jdtls compatibility with Telescope
       -- See fix_zero_version commentary for more information
       local command = (action.command and action.command.command) or action.command
-      if not (command == "java.apply.workspaceEdit") then
+      if command ~= "java.apply.workspaceEdit" then
         return action
       end
       local arguments = (action.command and action.command.arguments) or action.arguments
@@ -266,10 +297,10 @@ lsp.code_actions = function(opts)
     end
 
   local execute_action = opts.execute_action
-    or function(action)
+    or function(action, offset_encoding)
       if action.edit or type(action.command) == "table" then
         if action.edit then
-          vim.lsp.util.apply_workspace_edit(action.edit)
+          vim.lsp.util.apply_workspace_edit(action.edit, offset_encoding)
         end
         if type(action.command) == "table" then
           vim.lsp.buf.execute_command(action.command)
@@ -297,6 +328,9 @@ lsp.code_actions = function(opts)
         actions.close(prompt_bufnr)
         local action = selection.value.command
         local client = selection.value.client
+        local eff_execute = function(transformed)
+          execute_action(transformed, client.offset_encoding)
+        end
         if
           not action.edit
           and client
@@ -305,17 +339,20 @@ lsp.code_actions = function(opts)
         then
           client.request("codeAction/resolve", action, function(resolved_err, resolved_action)
             if resolved_err then
-              vim.notify(resolved_err.code .. ": " .. resolved_err.message, vim.log.levels.ERROR)
+              utils.notify("builtin.lsp_code_actions", {
+                msg = string.format("codeAction/resolve failed: %s : %s", resolved_err.code, resolved_err.message),
+                level = "ERROR",
+              })
               return
             end
             if resolved_action then
-              execute_action(transform_action(resolved_action))
+              eff_execute(transform_action(resolved_action))
             else
-              execute_action(transform_action(action))
+              eff_execute(transform_action(action))
             end
           end)
         else
-          execute_action(transform_action(action))
+          eff_execute(transform_action(action))
         end
       end)
 
@@ -326,20 +363,19 @@ lsp.code_actions = function(opts)
 end
 
 lsp.range_code_actions = function(opts)
-  opts.params = vim.lsp.util.make_given_range_params({ opts.start_line, 1 }, { opts.end_line, 1 })
+  opts.params = vim.lsp.util.make_given_range_params({ opts.start_line, 1 }, { opts.end_line, 1 }, opts.bufnr)
   lsp.code_actions(opts)
 end
 
 lsp.workspace_symbols = function(opts)
-  local bufnr = vim.api.nvim_get_current_buf()
   local params = { query = opts.query or "" }
-  vim.lsp.buf_request(0, "workspace/symbol", params, function(err, server_result, _ctx, _config)
+  vim.lsp.buf_request(opts.bufnr, "workspace/symbol", params, function(err, server_result, _, _)
     if err then
       vim.api.nvim_err_writeln("Error when finding workspace symbols: " .. err.message)
       return
     end
 
-    local locations = vim.lsp.util.symbols_to_items(server_result or {}, bufnr) or {}
+    local locations = vim.lsp.util.symbols_to_items(server_result or {}, opts.bufnr) or {}
     locations = utils.filter_symbols(locations, opts)
     if locations == nil then
       -- error message already printed in `utils.filter_symbols`
@@ -347,10 +383,11 @@ lsp.workspace_symbols = function(opts)
     end
 
     if vim.tbl_isempty(locations) then
-      print(
-        "No results from workspace/symbol. Maybe try a different query: "
-          .. "Telescope lsp_workspace_symbols query=example"
-      )
+      utils.notify("builtin.lsp_workspace_symbols", {
+        msg = "No results from workspace/symbol. Maybe try a different query: "
+          .. "'Telescope lsp_workspace_symbols query=example'",
+        level = "INFO",
+      })
       return
     end
 
@@ -392,21 +429,19 @@ local function get_workspace_symbols_requester(bufnr, opts)
 end
 
 lsp.dynamic_workspace_symbols = function(opts)
-  local curr_bufnr = vim.api.nvim_get_current_buf()
-
   pickers.new(opts, {
     prompt_title = "LSP Dynamic Workspace Symbols",
     finder = finders.new_dynamic {
       entry_maker = opts.entry_maker or make_entry.gen_from_lsp_symbols(opts),
-      fn = get_workspace_symbols_requester(curr_bufnr, opts),
+      fn = get_workspace_symbols_requester(opts.bufnr, opts),
     },
     previewer = conf.qflist_previewer(opts),
     sorter = conf.generic_sorter(opts),
   }):find()
 end
 
-local function check_capabilities(feature)
-  local clients = vim.lsp.buf_get_clients(0)
+local function check_capabilities(feature, bufnr)
+  local clients = vim.lsp.buf_get_clients(bufnr)
 
   local supported_client = false
   for _, client in pairs(clients) do
@@ -420,9 +455,15 @@ local function check_capabilities(feature)
     return true
   else
     if #clients == 0 then
-      print "LSP: no client attached"
+      utils.notify("builtin.lsp_*", {
+        msg = "no client attached",
+        level = "INFO",
+      })
     else
-      print("LSP: server does not support " .. feature)
+      utils.notify("builtin.lsp_*", {
+        msg = "server does not support " .. feature,
+        level = "INFO",
+      })
     end
     return false
   end
@@ -444,7 +485,7 @@ local function apply_checks(mod)
       opts = opts or {}
 
       local feature_name = feature_map[k]
-      if feature_name and not check_capabilities(feature_name) then
+      if feature_name and not check_capabilities(feature_name, opts.bufnr) then
         return
       end
       v(opts)

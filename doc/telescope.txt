@@ -74,6 +74,20 @@ telescope.setup({opts})                                    *telescope.setup()*
         - "descending" (default)
         - "ascending"
 
+                                              *telescope.defaults.tiebreak*
+    tiebreak: ~
+        A function that determines how to break a tie when two entries have
+        the same score.
+        Having a function that always returns false would keep the entries in
+        the order they are found, so existing_entry before current_entry.
+        Vice versa always returning true would place the current_entry
+        before the existing_entry.
+
+        Signature: function(current_entry, existing_entry, prompt) -> boolean
+
+        Default: function that breaks the tie based on the length of the
+                 entry's ordinal
+
                                     *telescope.defaults.selection_strategy*
     selection_strategy: ~
         Determines how the cursor acts after each sort iteration.
@@ -164,6 +178,12 @@ telescope.setup({opts})                                    *telescope.setup()*
         more information.
 
         Default: 0
+
+                                          *telescope.defaults.wrap_results*
+    wrap_results: ~
+        Word wrap the search results
+
+        Default: false
 
                                          *telescope.defaults.prompt_prefix*
     prompt_prefix: ~
@@ -287,6 +307,21 @@ telescope.setup({opts})                                    *telescope.setup()*
 
         Default: false
 
+                                         *telescope.defaults.results_title*
+    results_title: ~
+        Defines the default title of the results window. A false value
+        can be used to hide the title altogether.
+
+        Default: "Results"
+
+                                          *telescope.defaults.prompt_title*
+    prompt_title: ~
+        Defines the default title of the prompt window. A false value
+        can be used to hide the title altogether. Most of the times builtins
+        define a prompt_title which will be prefered over this default.
+
+        Default: "Prompt"
+
                                                *telescope.defaults.history*
     history: ~
         This field handles the configuration for prompt history.
@@ -306,7 +341,7 @@ telescope.setup({opts})                                    *telescope.setup()*
                      default: stdpath("data")/telescope_history
           - limit:   The amount of entries that will be written in the
                      history.
-                     Warning: If limit is set to nil it will grown unbound.
+                     Warning: If limit is set to nil it will grow unbound.
                      default: 100
           - handler: A lua function that implements the history.
                      This is meant as a developer setting for extensions to
@@ -518,6 +553,16 @@ telescope.setup({opts})                                    *telescope.setup()*
             ...,
             ["jj"] = { "<esc>", type = "command" },
             ["kk"] = { "<cmd>echo \"Hello, World!\"<cr>", type = "command" },)
+            ...,
+
+        You can also add additional options for mappings of any type
+        ("action" and "command"). For example:
+
+            ...,
+            ["<C-j>"] = {
+              action = actions.move_selection_next,
+              opts = { nowait = true, silent = true }
+            },
             ...,
 
 
@@ -779,34 +824,6 @@ builtin.fd()                                                    *builtin.fd()*
 
 
 
-builtin.file_browser({opts})                          *builtin.file_browser()*
-    Lists files and folders in your current working directory, open files,
-    navigate your filesystem, and create new files and folders
-    - Default keymaps:
-      - `<cr>`: opens the currently selected file, or navigates to the
-        currently selected directory
-      - `<C-e>`: creates new file in current directory, creates new directory
-        if the name contains a trailing '/'
-        - Note: you can create files nested into several directories with
-          `<C-e>`, i.e. `lua/telescope/init.lua` would create the file
-          `init.lua` inside of `lua/telescope` and will create the necessary
-          folders (similar to how `mkdir -p` would work) if they do not already
-          exist
-
-
-    Parameters: ~
-        {opts} (table)  options to pass to the picker
-
-    Options: ~
-        {cwd}      (string)   root dir to browse from (default: cwd, use
-                              utils.buffer_dir() to search relative to open
-                              buffer)
-        {depth}    (number)   file tree depth to display (default: 1)
-        {dir_icon} (string)   change the icon for a directory. (default: )
-        {hidden}   (boolean)  determines whether to show hidden files or not
-                              (default: false)
-
-
 builtin.treesitter()                                    *builtin.treesitter()*
     Lists function names, variables, and other symbols from treesitter queries
     - Default keymaps:
@@ -1032,7 +1049,7 @@ builtin.resume({opts})                                      *builtin.resume()*
 
 
 builtin.pickers({opts})                                    *builtin.pickers()*
-    Opens a picker over previously cached pickers in there preserved states
+    Opens a picker over previously cached pickers in their preserved states
     (incl. multi selections)
     - Default keymaps:
       - `<C-x>`: delete the selected cached picker
@@ -1254,6 +1271,12 @@ builtin.keymaps({opts})                                    *builtin.keymaps()*
     Parameters: ~
         {opts} (table)  options to pass to the picker
 
+    Options: ~
+        {modes}     (table)    a list of short-named keymap modes to search
+                               (default: { "n", "i", "c", "x" })
+        {show_plug} (boolean)  if true, the keymaps for which the lhs contains
+                               "<Plug>" are also shown (default: true)
+
 
 builtin.filetypes({opts})                                *builtin.filetypes()*
     Lists all available filetypes, sets currently open buffer's filetype to
@@ -1320,7 +1343,10 @@ builtin.lsp_references({opts})                      *builtin.lsp_references()*
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {timeout} (number)  timeout for the sync call (default: 10000)
+        {include_declaration}  (boolean)  include symbol declaration in the
+                                          lsp references (default: true)
+        {include_current_line} (boolean)  include current line (default:
+                                          false)
 
 
 builtin.lsp_definitions({opts})                    *builtin.lsp_definitions()*
@@ -1332,8 +1358,6 @@ builtin.lsp_definitions({opts})                    *builtin.lsp_definitions()*
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {timeout}         (number)   timeout for the sync call (default:
-                                     10000)
         {jump_type}       (string)   how to goto definition if there is only
                                      one, values: "tab", "split", "vsplit",
                                      "never"
@@ -1349,8 +1373,6 @@ builtin.lsp_type_definitions({opts})          *builtin.lsp_type_definitions()*
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {timeout}         (number)   timeout for the sync call (default:
-                                     10000)
         {jump_type}       (string)   how to goto definition if there is only
                                      one, values: "tab", "split", "vsplit",
                                      "never"
@@ -1366,8 +1388,6 @@ builtin.lsp_implementations({opts})            *builtin.lsp_implementations()*
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {timeout}         (number)   timeout for the sync call (default:
-                                     10000)
         {jump_type}       (string)   how to goto implementation if there is
                                      only one, values: "tab", "split",
                                      "vsplit", "never"
@@ -1395,7 +1415,9 @@ builtin.lsp_range_code_actions({opts})      *builtin.lsp_range_code_actions()*
 
     Options: ~
         {timeout}    (number)  timeout for the sync call (default: 10000)
-        {start_line} (number)  where the code action ends (default: handled by
+        {start_line} (number)  where the code action starts (default: handled
+                               by :'<,'>Telescope lsp_range_code_actions)
+        {end_line}   (number)  where the code action ends (default: handled by
                                :'<,'>Telescope lsp_range_code_actions)
 
 
@@ -1410,14 +1432,13 @@ builtin.lsp_document_symbols({opts})          *builtin.lsp_document_symbols()*
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {timeout}           (number)        timeout for the sync call
-                                            (default: 10000)
         {ignore_filename}   (boolean)       dont show filenames (default:
                                             true)
         {show_line}         (boolean)       if true, shows the content of the
                                             line the tag is found on (default:
                                             false)
         {symbols}           (string|table)  filter results by symbol kind(s)
+        {ignore_symbols}    (string|table)  list of symbols to ignore
         {symbol_highlights} (table)         string -> string. Matches symbol
                                             with hl_group
 
@@ -1435,14 +1456,13 @@ builtin.lsp_workspace_symbols({opts})        *builtin.lsp_workspace_symbols()*
     Options: ~
         {query}             (string)        for what to query the workspace
                                             (default: "")
-        {timeout}           (number)        timeout for the sync call
-                                            (default: 10000)
         {ignore_filename}   (boolean)       dont show filenames (default:
                                             false)
         {show_line}         (boolean)       if true, shows the content of the
                                             line the tag is found on (default:
                                             false)
         {symbols}           (string|table)  filter results by symbol kind(s)
+        {ignore_symbols}    (string|table)  list of symbols to ignore
         {symbol_highlights} (table)         string -> string. Matches symbol
                                             with hl_group
 
@@ -1464,12 +1484,13 @@ builtin.lsp_dynamic_workspace_symbols({opts}) *builtin.lsp_dynamic_workspace_sym
                                             line the symbol is found on
                                             (default: false)
         {symbols}           (string|table)  filter results by symbol kind(s)
+        {ignore_symbols}    (string|table)  list of symbols to ignore
         {symbol_highlights} (table)         string -> string. Matches symbol
                                             with hl_group
 
 
 builtin.diagnostics({opts})                            *builtin.diagnostics()*
-    Lists diagnostics for current or all open buffers
+    Lists diagnostics
     - Fields:
       - `All severity flags can be passed as `string` or `number` as per
         `:vim.diagnostic.severity:`
@@ -1482,22 +1503,27 @@ builtin.diagnostics({opts})                            *builtin.diagnostics()*
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {bufnr}          (string|number)  if nil get diagnostics for all open
-                                          buffers. Use 0 for current buffer
-        {severity}       (string|number)  filter diagnostics by severity name
-                                          (string) or id (number)
-        {severity_limit} (string|number)  keep diagnostics equal or more
-                                          severe wrt severity name (string) or
-                                          id (number)
-        {severity_bound} (string|number)  keep diagnostics equal or less
-                                          severe wrt severity name (string) or
-                                          id (number)
-        {no_sign}        (boolean)        hide DiagnosticSigns from Results
-                                          (default: false)
-        {line_width}     (number)         set length of diagnostic entry text
-                                          in Results
-        {namespace}      (number)         limit your diagnostics to a specific
-                                          namespace
+        {bufnr}          (string|number)   if nil get diagnostics for all open
+                                           buffers. Use 0 for current buffer
+        {severity}       (string|number)   filter diagnostics by severity name
+                                           (string) or id (number)
+        {severity_limit} (string|number)   keep diagnostics equal or more
+                                           severe wrt severity name (string)
+                                           or id (number)
+        {severity_bound} (string|number)   keep diagnostics equal or less
+                                           severe wrt severity name (string)
+                                           or id (number)
+        {root_dir}       (string|boolean)  if set to string, get diagnostics
+                                           only for buffers under this dir
+                                           otherwise cwd
+        {no_unlisted}    (boolean)         if true, get diagnostics only for
+                                           listed buffers
+        {no_sign}        (boolean)         hide DiagnosticSigns from Results
+                                           (default: false)
+        {line_width}     (number)          set length of diagnostic entry text
+                                           in Results
+        {namespace}      (number)          limit your diagnostics to a
+                                           specific namespace
 
 
 
@@ -1644,11 +1670,15 @@ layout_strategies.horizontal()                *layout_strategies.horizontal()*
 layout_strategies.center()                        *layout_strategies.center()*
     Centered layout with a combined block of the prompt and results aligned to
     the middle of the screen. The preview window is then placed in the
-    remaining space above. Particularly useful for creating dropdown menus (see
-    |telescope.themes| and |themes.get_dropdown()|`).
+    remaining space above or below, according to `anchor` or `mirror`.
+    Particularly useful for creating dropdown menus (see |telescope.themes| and
+    |themes.get_dropdown()|).
 
-    Note that the `anchor` option can only pin this layout to the left or right
-    edges.
+    Note that vertical anchoring, i.e. `anchor` containing `"N"` or `"S"`, will
+    override `mirror` config. For `"N"` anchoring preview will be placed below
+    prompt/result block. For `"S"` anchoring preview will be placed above
+    prompt/result block. For horizontal only anchoring preview will be placed
+    according to `mirror` config, default is above the prompt/result block.
 
     ┌──────────────────────────────────────────────────┐
     │    ┌────────────────────────────────────────┐    │
@@ -1857,6 +1887,54 @@ resolver.resolve_anchor_pos()                  *resolver.resolve_anchor_pos()*
 
 Actions functions that are useful for people creating their own mappings.
 
+Actions can be either normal functions that expect the prompt_bufnr as first
+argument (1) or they can be a custom telescope type called "action" (2).
+
+(1) The `prompt_bufnr` of a normal function denotes the identifier of your
+picker which can be used to access the picker state. In practice, users most
+commonly access from both picker and global state via the following:
+
+>
+-- for utility functions
+local action_state = require "telescope.actions.state"
+
+local actions = {}
+actions.do_stuff = function(prompt_bufnr)
+  local current_picker = action_state.get_current_picker(prompt_bufnr) -- picker state
+  local entry = action_state.get_selected_entry()
+end
+<
+
+See |telescope.actions.state| for more information.
+
+(2) To transform a module of functions into a module of "action"s, you need to
+do the following:
+
+>
+local transform_mod = require("telescope.actions.mt").transform_mod
+
+local mod = {}
+mod.a1 = function(prompt_bufnr)
+  -- your code goes here
+  -- You can access the picker/global state as described above in (1).
+end
+
+mod.a2 = function(prompt_bufnr)
+  -- your code goes here
+end
+mod = transform_mod(mod)
+
+-- Now the following is possible. This means that actions a2 will be executed
+-- after action a1. You can chain as many actions as you want.
+local action = mod.a1 + mod.a2
+action(bufnr)
+<
+
+Another interesing thing to do is that these actions now have functions you can
+call. These functions include `:replace(f)`, `:replace_if(f, c)`,
+`replace_map(tbl)` and `enhance(tbl)`. More information on these functions can
+be found in the `developers.md` and `lua/tests/automated/action_spec.lua` file.
+
 actions.move_selection_next({prompt_bufnr})    *actions.move_selection_next()*
     Move the selection to the next entry
 
@@ -1965,6 +2043,209 @@ actions.toggle_all({prompt_bufnr})                      *actions.toggle_all()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
+actions.preview_scrolling_up({prompt_bufnr})  *actions.preview_scrolling_up()*
+    Scroll the preview window up
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.preview_scrolling_down({prompt_bufnr}) *actions.preview_scrolling_down()*
+    Scroll the preview window down
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.results_scrolling_up({prompt_bufnr})  *actions.results_scrolling_up()*
+    Scroll the results window up
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.results_scrolling_down({prompt_bufnr}) *actions.results_scrolling_down()*
+    Scroll the results window down
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.center({prompt_bufnr})                              *actions.center()*
+    Center the cursor in the window, can be used after selecting a file to edit
+    You can just map `actions.select_default + actions.center`
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.select_default({prompt_bufnr})              *actions.select_default()*
+    Perform default action on selection, usually something like
+    `:edit <selection>`
+
+    i.e. open the selection in the current buffer
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.select_horizontal({prompt_bufnr})        *actions.select_horizontal()*
+    Perform 'horizontal' action on selection, usually something like
+    `:new <selection>`
+
+    i.e. open the selection in a new horizontal split
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.select_vertical({prompt_bufnr})            *actions.select_vertical()*
+    Perform 'vertical' action on selection, usually something like
+    `:vnew <selection>`
+
+    i.e. open the selection in a new vertical split
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.select_tab({prompt_bufnr})                      *actions.select_tab()*
+    Perform 'tab' action on selection, usually something like
+    `:tabedit <selection>`
+
+    i.e. open the selection in a new tab
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.file_edit({prompt_bufnr})                        *actions.file_edit()*
+    Perform file edit on selection, usually something like
+    `:edit <selection>`
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.file_split({prompt_bufnr})                      *actions.file_split()*
+    Perform file split on selection, usually something like
+    `:new <selection>`
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.file_vsplit({prompt_bufnr})                    *actions.file_vsplit()*
+    Perform file vsplit on selection, usually something like
+    `:vnew <selection>`
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.file_tab({prompt_bufnr})                          *actions.file_tab()*
+    Perform file tab on selection, usually something like
+    `:tabedit <selection>`
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.close({prompt_bufnr})                                *actions.close()*
+    Close the Telescope window, usually used within an action
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions._close({prompt_bufnr}, {keepinsert})                *actions._close()*
+    Close the Telescope window and specify if you want to keep insert mode or
+    not
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)   The prompt bufnr
+        {keepinsert}   (boolean)  Remain in INSERT mode if true
+
+
+actions.edit_command_line({prompt_bufnr})        *actions.edit_command_line()*
+    Set a value in the command line and dont run it, making it editable.
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.set_command_line({prompt_bufnr})          *actions.set_command_line()*
+    Set a value in the command line and run it
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.edit_search_line({prompt_bufnr})          *actions.edit_search_line()*
+    Set a value in the search line and dont search for it, making it editable.
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.set_search_line({prompt_bufnr})            *actions.set_search_line()*
+    Set a value in the search line and search for it
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.edit_register({prompt_bufnr})                *actions.edit_register()*
+    Edit a register
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.paste_register({prompt_bufnr})              *actions.paste_register()*
+    Paste the selected register into the buffer
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.insert_symbol({prompt_bufnr})                *actions.insert_symbol()*
+    Insert a symbol into the current buffer (while switching to normal mode)
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.insert_symbol_i({prompt_bufnr})            *actions.insert_symbol_i()*
+    Insert a symbol into the current buffer and keeping the insert mode.
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
 actions.git_create_branch({prompt_bufnr})        *actions.git_create_branch()*
     Create and checkout a new git branch if it doesn't already exist
 
@@ -2055,6 +2336,14 @@ actions.git_reset_hard({prompt_bufnr})              *actions.git_reset_hard()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
+actions.git_checkout_current_buffer({prompt_bufnr}) *actions.git_checkout_current_buffer()*
+    Checkout a specific file for a given sha
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
 actions.git_staging_toggle({prompt_bufnr})      *actions.git_staging_toggle()*
     Stage/unstage selected file
 
@@ -2063,82 +2352,153 @@ actions.git_staging_toggle({prompt_bufnr})      *actions.git_staging_toggle()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
-actions.send_selected_to_qflist()          *actions.send_selected_to_qflist()*
+actions.send_selected_to_qflist({prompt_bufnr}) *actions.send_selected_to_qflist()*
     Sends the selected entries to the quickfix list, replacing the previous
     entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.add_selected_to_qflist()            *actions.add_selected_to_qflist()*
+
+actions.add_selected_to_qflist({prompt_bufnr}) *actions.add_selected_to_qflist()*
     Adds the selected entries to the quickfix list, keeping the previous
     entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.send_to_qflist()                            *actions.send_to_qflist()*
+
+actions.send_to_qflist({prompt_bufnr})              *actions.send_to_qflist()*
     Sends all entries to the quickfix list, replacing the previous entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.add_to_qflist()                              *actions.add_to_qflist()*
+
+actions.add_to_qflist({prompt_bufnr})                *actions.add_to_qflist()*
     Adds all entries to the quickfix list, keeping the previous entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.send_selected_to_loclist()        *actions.send_selected_to_loclist()*
+
+actions.send_selected_to_loclist({prompt_bufnr}) *actions.send_selected_to_loclist()*
     Sends the selected entries to the location list, replacing the previous
     entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.add_selected_to_loclist()          *actions.add_selected_to_loclist()*
+
+actions.add_selected_to_loclist({prompt_bufnr}) *actions.add_selected_to_loclist()*
     Adds the selected entries to the location list, keeping the previous
     entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.send_to_loclist()                          *actions.send_to_loclist()*
+
+actions.send_to_loclist({prompt_bufnr})            *actions.send_to_loclist()*
     Sends all entries to the location list, replacing the previous entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.add_to_loclist()                            *actions.add_to_loclist()*
+
+actions.add_to_loclist({prompt_bufnr})              *actions.add_to_loclist()*
     Adds all entries to the location list, keeping the previous entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.smart_send_to_qflist()                *actions.smart_send_to_qflist()*
+
+actions.smart_send_to_qflist({prompt_bufnr})  *actions.smart_send_to_qflist()*
     Sends the selected entries to the quickfix list, replacing the previous
     entries. If no entry was selected, sends all entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.smart_add_to_qflist()                  *actions.smart_add_to_qflist()*
+
+actions.smart_add_to_qflist({prompt_bufnr})    *actions.smart_add_to_qflist()*
     Adds the selected entries to the quickfix list, keeping the previous
     entries. If no entry was selected, adds all entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.smart_send_to_loclist()              *actions.smart_send_to_loclist()*
+
+actions.smart_send_to_loclist({prompt_bufnr}) *actions.smart_send_to_loclist()*
     Sends the selected entries to the location list, replacing the previous
     entries. If no entry was selected, sends all entries.
 
 
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
-actions.smart_add_to_loclist()                *actions.smart_add_to_loclist()*
+
+actions.smart_add_to_loclist({prompt_bufnr})  *actions.smart_add_to_loclist()*
     Adds the selected entries to the location list, keeping the previous
     entries. If no entry was selected, adds all entries.
 
 
-
-actions.open_qflist()                                  *actions.open_qflist()*
-    Open the quickfix list
-
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
 
-actions.open_loclist()                                *actions.open_loclist()*
-    Open the location list
+actions.complete_tag({prompt_bufnr})                  *actions.complete_tag()*
+    Open completion menu containing the tags which can be used to filter the
+    results in a faster way
 
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.cycle_history_next({prompt_bufnr})      *actions.cycle_history_next()*
+    Cycle to the next search prompt in the history
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.cycle_history_prev({prompt_bufnr})      *actions.cycle_history_prev()*
+    Cycle to the previous search prompt in the history
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.open_qflist({prompt_bufnr})                    *actions.open_qflist()*
+    Open the quickfix list. It makes sense to use this in combination with one
+    of the send_to_qflist actions `actions.smart_send_to_qflist +
+    actions.open_qflist`
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
+
+
+actions.open_loclist({prompt_bufnr})                  *actions.open_loclist()*
+    Open the location list. It makes sense to use this in combination with one
+    of the send_to_loclist actions `actions.smart_send_to_qflist +
+    actions.open_qflist`
+
+
+    Parameters: ~
+        {prompt_bufnr} (number)  The prompt bufnr
 
 
 actions.delete_buffer({prompt_bufnr})                *actions.delete_buffer()*
@@ -2434,7 +2794,7 @@ General usage:
           ["?"] = action_generate.which_key {
             name_width = 20, -- typically leads to smaller floats
             max_height = 0.5, -- increase potential maximum height
-            seperator = " > ", -- change sep between mode, keybind, and name
+            separator = " > ", -- change sep between mode, keybind, and name
             close_with_action = false, -- do not close float on action
           },
         },
@@ -2470,7 +2830,7 @@ action_generate.which_key({opts})                *action_generate.which_key()*
         {name_width}             (number)   fixed width of action name to be
                                             shown (default: 30)
         {column_padding}         (string)   string to split; can be used for
-                                            vertical seperator (default: " ")
+                                            vertical separator (default: " ")
         {mode_hl}                (string)   hl group of mode (default:
                                             TelescopeResultsConstant)
         {keybind_hl}             (string)   hl group of keybind (default:
@@ -2481,7 +2841,7 @@ action_generate.which_key({opts})                *action_generate.which_key()*
                                             keybinds are shown (default: 4)
         {line_padding}           (number)   row padding in top and bottom of
                                             float (default: 1)
-        {separator}              (string)   seperator string between mode, key
+        {separator}              (string)   separator string between mode, key
                                             bindings, and action (default: "
                                             -> ")
         {close_with_action}      (boolean)  registered action will close

@@ -86,22 +86,6 @@ builtin.find_files = require_on_exported_call("telescope.builtin.files").find_fi
 --- This is an alias for the `find_files` picker
 builtin.fd = builtin.find_files
 
---- Lists files and folders in your current working directory, open files, navigate your filesystem, and create new
---- files and folders
---- - Default keymaps:
----   - `<cr>`: opens the currently selected file, or navigates to the currently selected directory
----   - `<C-e>`: creates new file in current directory, creates new directory if the name contains a trailing '/'
----     - Note: you can create files nested into several directories with `<C-e>`, i.e. `lua/telescope/init.lua` would
----       create the file `init.lua` inside of `lua/telescope` and will create the necessary folders (similar to how
----       `mkdir -p` would work) if they do not already exist
----@deprecated Please move to https://github.com/nvim-telescope/telescope-file-browser.nvim
----@param opts table: options to pass to the picker
----@field cwd string: root dir to browse from (default: cwd, use utils.buffer_dir() to search relative to open buffer)
----@field depth number: file tree depth to display (default: 1)
----@field dir_icon string: change the icon for a directory. (default: )
----@field hidden boolean: determines whether to show hidden files or not (default: false)
-builtin.file_browser = require_on_exported_call("telescope.builtin.files").file_browser
-
 --- Lists function names, variables, and other symbols from treesitter queries
 --- - Default keymaps:
 ---   - `<C-l>`: show autocompletion menu to prefilter your query by kind of ts node you want to see (i.e. `:var:`)
@@ -226,7 +210,7 @@ builtin.builtin = require_on_exported_call("telescope.builtin.internal").builtin
 ---@field cache_index number: what picker to resume, where 1 denotes most recent (default: 1)
 builtin.resume = require_on_exported_call("telescope.builtin.internal").resume
 
---- Opens a picker over previously cached pickers in there preserved states (incl. multi selections)
+--- Opens a picker over previously cached pickers in their preserved states (incl. multi selections)
 --- - Default keymaps:
 ---   - `<C-x>`: delete the selected cached picker
 --- - Notes:
@@ -330,6 +314,8 @@ builtin.registers = require_on_exported_call("telescope.builtin.internal").regis
 
 --- Lists normal mode keymappings, runs the selected keymap on `<cr>`
 ---@param opts table: options to pass to the picker
+---@field modes table: a list of short-named keymap modes to search (default: { "n", "i", "c", "x" })
+---@field show_plug boolean: if true, the keymaps for which the lhs contains "<Plug>" are also shown (default: true)
 builtin.keymaps = require_on_exported_call("telescope.builtin.internal").keymaps
 
 --- Lists all available filetypes, sets currently open buffer's filetype to selected filetype in Telescope on `<cr>`
@@ -366,12 +352,12 @@ builtin.jumplist = require_on_exported_call("telescope.builtin.internal").jumpli
 
 --- Lists LSP references for word under the cursor, jumps to reference on `<cr>`
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
+---@field include_declaration boolean: include symbol declaration in the lsp references (default: true)
+---@field include_current_line boolean: include current line (default: false)
 builtin.lsp_references = require_on_exported_call("telescope.builtin.lsp").references
 
 --- Goto the definition of the word under the cursor, if there's only one, otherwise show all options in Telescope
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field jump_type string: how to goto definition if there is only one, values: "tab", "split", "vsplit", "never"
 ---@field ignore_filename boolean: dont show filenames (default: true)
 builtin.lsp_definitions = require_on_exported_call("telescope.builtin.lsp").definitions
@@ -379,14 +365,12 @@ builtin.lsp_definitions = require_on_exported_call("telescope.builtin.lsp").defi
 --- Goto the definition of the type of the word under the cursor, if there's only one,
 --- otherwise show all options in Telescope
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field jump_type string: how to goto definition if there is only one, values: "tab", "split", "vsplit", "never"
 ---@field ignore_filename boolean: dont show filenames (default: true)
 builtin.lsp_type_definitions = require("telescope.builtin.lsp").type_definitions
 
 --- Goto the implementation of the word under the cursor if there's only one, otherwise show all options in Telescope
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field jump_type string: how to goto implementation if there is only one, values: "tab", "split", "vsplit", "never"
 ---@field ignore_filename boolean: dont show filenames (default: true)
 builtin.lsp_implementations = require_on_exported_call("telescope.builtin.lsp").implementations
@@ -400,17 +384,17 @@ builtin.lsp_code_actions = require_on_exported_call("telescope.builtin.lsp").cod
 ---@param opts table: options to pass to the picker
 ---@field timeout number: timeout for the sync call (default: 10000)
 ---@field start_line number: where the code action starts (default: handled by :'<,'>Telescope lsp_range_code_actions)
----@field start_line number: where the code action ends (default: handled by :'<,'>Telescope lsp_range_code_actions)
+---@field end_line number: where the code action ends (default: handled by :'<,'>Telescope lsp_range_code_actions)
 builtin.lsp_range_code_actions = require_on_exported_call("telescope.builtin.lsp").range_code_actions
 
 --- Lists LSP document symbols in the current buffer
 --- - Default keymaps:
 ---   - `<C-l>`: show autocompletion menu to prefilter your query by type of symbol you want to see (i.e. `:variable:`)
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field ignore_filename boolean: dont show filenames (default: true)
 ---@field show_line boolean: if true, shows the content of the line the tag is found on (default: false)
 ---@field symbols string|table: filter results by symbol kind(s)
+---@field ignore_symbols string|table: list of symbols to ignore
 ---@field symbol_highlights table: string -> string. Matches symbol with hl_group
 builtin.lsp_document_symbols = require_on_exported_call("telescope.builtin.lsp").document_symbols
 
@@ -419,10 +403,10 @@ builtin.lsp_document_symbols = require_on_exported_call("telescope.builtin.lsp")
 ---   - `<C-l>`: show autocompletion menu to prefilter your query by type of symbol you want to see (i.e. `:variable:`)
 ---@param opts table: options to pass to the picker
 ---@field query string: for what to query the workspace (default: "")
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field ignore_filename boolean: dont show filenames (default: false)
 ---@field show_line boolean: if true, shows the content of the line the tag is found on (default: false)
 ---@field symbols string|table: filter results by symbol kind(s)
+---@field ignore_symbols string|table: list of symbols to ignore
 ---@field symbol_highlights table: string -> string. Matches symbol with hl_group
 builtin.lsp_workspace_symbols = require_on_exported_call("telescope.builtin.lsp").workspace_symbols
 
@@ -433,25 +417,9 @@ builtin.lsp_workspace_symbols = require_on_exported_call("telescope.builtin.lsp"
 ---@field ignore_filename boolean: dont show filenames (default: false)
 ---@field show_line boolean: if true, shows the content of the line the symbol is found on (default: false)
 ---@field symbols string|table: filter results by symbol kind(s)
+---@field ignore_symbols string|table: list of symbols to ignore
 ---@field symbol_highlights table: string -> string. Matches symbol with hl_group
 builtin.lsp_dynamic_workspace_symbols = require_on_exported_call("telescope.builtin.lsp").dynamic_workspace_symbols
-
-builtin.lsp_document_diagnostics = function(...)
-  vim.api.nvim_err_write(
-    "`lsp_document_diagnostics` is deprecated and will be removed. Please use `Telescope diagnostics bufnr=0`.\n"
-      .. "For more information see `:help telescope.changelog-1553`\n"
-  )
-  local new = ...
-  new.bufnr = 0
-  require("telescope.builtin.diagnostics").get(new)
-end
-builtin.lsp_workspace_diagnostics = function(...)
-  vim.api.nvim_err_write(
-    "`lsp_workspace_diagnostics` is deprecated and will be removed. Please use `Telescope diagnostics`.\n"
-      .. "For more information see `:help telescope.changelog-1553`\n"
-  )
-  require("telescope.builtin.diagnostics").get(...)
-end
 
 --
 --
@@ -459,7 +427,7 @@ end
 --
 --
 
---- Lists diagnostics for current or all open buffers
+--- Lists diagnostics
 --- - Fields:
 ---   - `All severity flags can be passed as `string` or `number` as per `:vim.diagnostic.severity:`
 --- - Default keymaps:
@@ -469,6 +437,8 @@ end
 ---@field severity string|number: filter diagnostics by severity name (string) or id (number)
 ---@field severity_limit string|number: keep diagnostics equal or more severe wrt severity name (string) or id (number)
 ---@field severity_bound string|number: keep diagnostics equal or less severe wrt severity name (string) or id (number)
+---@field root_dir string|boolean: if set to string, get diagnostics only for buffers under this dir otherwise cwd
+---@field no_unlisted boolean: if true, get diagnostics only for listed buffers
 ---@field no_sign boolean: hide DiagnosticSigns from Results (default: false)
 ---@field line_width number: set length of diagnostic entry text in Results
 ---@field namespace number: limit your diagnostics to a specific namespace
@@ -479,6 +449,8 @@ local apply_config = function(mod)
   for k, v in pairs(mod) do
     mod[k] = function(opts)
       opts = opts or {}
+      opts.bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
+      opts.winnr = opts.winnr or vim.api.nvim_get_current_win()
       local pconf = pickers_conf[k] or {}
       local defaults = (function()
         if pconf.theme then

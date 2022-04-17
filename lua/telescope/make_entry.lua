@@ -110,29 +110,9 @@ do
     ordinal = 1,
   }
 
-  local find = (function()
-    if Path.path.sep == "\\" then
-      return function(t)
-        local start, _, filename, lnum, col, text = string.find(t, [[([^:]+):(%d+):(%d+):(.*)]])
-
-        -- Handle Windows drive letter (e.g. "C:") at the beginning (if present)
-        if start == 3 then
-          filename = string.sub(t.value, 1, 3) .. filename
-        end
-
-        return filename, lnum, col, text
-      end
-    else
-      return function(t)
-        local _, _, filename, lnum, col, text = string.find(t, [[([^:]+):(%d+):(%d+):(.*)]])
-        return filename, lnum, col, text
-      end
-    end
-  end)()
-
   -- Gets called only once to parse everything out for the vimgrep, after that looks up directly.
   local parse = function(t)
-    local filename, lnum, col, text = find(t.value)
+    local _, _, filename, lnum, col, text = string.find(t.value, [[(..-):(%d+):(%d+):(.*)]])
 
     local ok
     ok, lnum = pcall(tonumber, lnum)
@@ -556,7 +536,7 @@ function make_entry.gen_from_treesitter(opts)
   return function(entry)
     local ts_utils = require "nvim-treesitter.ts_utils"
     local start_row, start_col, end_row, _ = ts_utils.get_node_range(entry.node)
-    local node_text = ts_utils.get_node_text(entry.node)[1]
+    local node_text = ts_utils.get_node_text(entry.node, bufnr)[1]
     return {
       valid = true,
 
@@ -631,6 +611,11 @@ function make_entry.gen_from_apropos(opts)
 
   return function(line)
     local keyword, cmd, section, desc = line:match "^((.-)%s*%(([^)]+)%).-)%s+%-%s+(.*)$"
+    -- apropos might return alternatives for the cmd which are split on `,` and breaks everything else
+    -- for example on void linux it will return `alacritty, Alacritty` which will later result in
+    -- `man 1 alacritty, Alacritty`. So we just take the first one.
+    -- doing this outside of regex because of obvious reasons
+    cmd = vim.split(cmd, ",")[1]
     return keyword
         and sections[section]
         and {
@@ -688,6 +673,44 @@ function make_entry.gen_from_registers(_)
       value = entry,
       ordinal = entry,
       content = vim.fn.getreg(entry),
+      display = make_display,
+    }
+  end
+end
+
+function make_entry.gen_from_keymaps(opts)
+  local function get_desc(entry)
+    return entry.desc or entry.rhs or "Lua function"
+  end
+  local function get_lhs(entry)
+    return utils.display_termcodes(entry.lhs)
+  end
+
+  local displayer = require("telescope.pickers.entry_display").create {
+    separator = "▏",
+    items = {
+      { width = 2 },
+      { width = opts.width_lhs },
+      { remaining = true },
+    },
+  }
+  local make_display = function(entry)
+    return displayer {
+      entry.mode,
+      get_lhs(entry),
+      get_desc(entry),
+    }
+  end
+
+  return function(entry)
+    return {
+      mode = entry.mode,
+      lhs = get_lhs(entry),
+      desc = get_desc(entry),
+      --
+      valid = entry ~= "",
+      value = entry,
+      ordinal = entry.mode .. " " .. get_lhs(entry) .. " " .. get_desc(entry),
       display = make_display,
     }
   end
@@ -888,7 +911,7 @@ function make_entry.gen_from_ctags(opts)
   opts = opts or {}
 
   local cwd = vim.fn.expand(opts.cwd or vim.loop.cwd())
-  local current_file = Path:new(vim.fn.expand "%"):normalize(cwd)
+  local current_file = Path:new(vim.api.nvim_buf_get_name(opts.bufnr)):normalize(cwd)
 
   local display_items = {
     { remaining = true },

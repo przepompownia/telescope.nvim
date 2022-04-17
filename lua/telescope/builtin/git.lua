@@ -15,13 +15,21 @@ local git = {}
 
 git.files = function(opts)
   if opts.is_bare then
-    error "This operation must be run in a work tree"
+    utils.notify("builtin.git_files", {
+      msg = "This operation must be run in a work tree",
+      level = "ERROR",
+    })
+    return
   end
 
   local show_untracked = utils.get_default(opts.show_untracked, true)
   local recurse_submodules = utils.get_default(opts.recurse_submodules, false)
   if show_untracked and recurse_submodules then
-    error "Git does not support both --others and --recurse-submodules"
+    utils.notify("builtin.git_files", {
+      msg = "Git does not support both --others and --recurse-submodules",
+      level = "ERROR",
+    })
+    return
   end
 
   -- By creating the entry maker after the cwd options,
@@ -101,8 +109,8 @@ local get_current_buf_line = function(winnr)
 end
 
 git.bcommits = function(opts)
-  opts.current_line = (opts.current_file == nil) and get_current_buf_line(0) or nil
-  opts.current_file = vim.F.if_nil(opts.current_file, vim.fn.expand "%:p")
+  opts.current_line = (opts.current_file == nil) and get_current_buf_line(opts.winnr) or nil
+  opts.current_file = vim.F.if_nil(opts.current_file, vim.api.nvim_buf_get_name(opts.bufnr))
   opts.entry_maker = vim.F.if_nil(opts.entry_maker, make_entry.gen_from_git_commits(opts))
   local git_command = vim.F.if_nil(opts.git_command, { "git", "log", "--pretty=oneline", "--abbrev-commit" })
 
@@ -300,7 +308,11 @@ end
 
 git.status = function(opts)
   if opts.is_bare then
-    error "This operation must be run in a work tree"
+    utils.notify("builtin.git_status", {
+      msg = "This operation must be run in a work tree",
+      level = "ERROR",
+    })
+    return
   end
 
   local gen_new_finder = function()
@@ -308,13 +320,17 @@ git.status = function(opts)
     local git_cmd = { "git", "status", "-s", "--", "." }
 
     if expand_dir then
-      table.insert(git_cmd, table.getn(git_cmd) - 1, "-u")
+      table.insert(git_cmd, #git_cmd - 1, "-u")
     end
 
     local output = utils.get_os_command_output(git_cmd, opts.cwd)
 
-    if table.getn(output) == 0 then
+    if #output == 0 then
       print "No changes found"
+      utils.notify("builtin.git_status", {
+        msg = "No changes found",
+        level = "WARN",
+      })
       return
     end
 

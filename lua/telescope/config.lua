@@ -154,6 +154,25 @@ append(
 )
 
 append(
+  "tiebreak",
+  function(current_entry, existing_entry, _)
+    return #current_entry.ordinal < #existing_entry.ordinal
+  end,
+  [[
+  A function that determines how to break a tie when two entries have
+  the same score.
+  Having a function that always returns false would keep the entries in
+  the order they are found, so existing_entry before current_entry.
+  Vice versa always returning true would place the current_entry
+  before the existing_entry.
+
+  Signature: function(current_entry, existing_entry, prompt) -> boolean
+
+  Default: function that breaks the tie based on the length of the
+           entry's ordinal]]
+)
+
+append(
   "selection_strategy",
   "reset",
   [[
@@ -215,6 +234,15 @@ append(
   more information.
 
   Default: 0]]
+)
+
+append(
+  "wrap_results",
+  false,
+  [[
+  Word wrap the search results
+
+  Default: false]]
 )
 
 append(
@@ -344,6 +372,7 @@ append(
 append(
   "get_status_text",
   function(self)
+    local ww = #(self:get_multi_selection())
     local xx = (self.stats.processed or 0) - (self.stats.filtered or 0)
     local yy = self.stats.processed or 0
     if xx == 0 and yy == 0 then
@@ -356,7 +385,11 @@ append(
     -- else
     --   status_icon = "*"
     -- end
-    return string.format("%s / %s", xx, yy)
+    if ww == 0 then
+      return string.format("%s / %s", xx, yy)
+    else
+      return string.format("%s / %s / %s", ww, xx, yy)
+    end
   end,
   [[
   A function that determines what the virtual text looks like.
@@ -387,6 +420,27 @@ append(
 )
 
 append(
+  "results_title",
+  "Results",
+  [[
+  Defines the default title of the results window. A false value
+  can be used to hide the title altogether.
+
+  Default: "Results"]]
+)
+
+append(
+  "prompt_title",
+  "Prompt",
+  [[
+  Defines the default title of the prompt window. A false value
+  can be used to hide the title altogether. Most of the times builtins
+  define a prompt_title which will be prefered over this default.
+
+  Default: "Prompt"]]
+)
+
+append(
   "history",
   {
     path = vim.fn.stdpath "data" .. os_sep .. "telescope_history",
@@ -413,7 +467,7 @@ append(
                default: stdpath("data")/telescope_history
     - limit:   The amount of entries that will be written in the
                history.
-               Warning: If limit is set to nil it will grown unbound.
+               Warning: If limit is set to nil it will grow unbound.
                default: 100
     - handler: A lua function that implements the history.
                This is meant as a developer setting for extensions to
@@ -656,6 +710,16 @@ append(
       ...,
       ["jj"] = { "<esc>", type = "command" },
       ["kk"] = { "<cmd>echo \"Hello, World!\"<cr>", type = "command" },)
+      ...,
+
+  You can also add additional options for mappings of any type
+  ("action" and "command"). For example:
+
+      ...,
+      ["<C-j>"] = {
+        action = actions.move_selection_next,
+        opts = { nowait = true, silent = true }
+      },
       ...,
   ]]
 )
