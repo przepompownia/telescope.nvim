@@ -422,6 +422,10 @@ function Picker:find()
     if self.initial_mode == "insert" or self.initial_mode == "normal" then
       -- required for set_prompt to work adequately
       vim.schedule(function()
+        if vim.fn.mode() == 'v' then
+          local key = vim.api.nvim_replace_termcodes("<ESC>", true, false, true)
+          vim.api.nvim_feedkeys(key, "i", true)
+        end
         vim.cmd [[startinsert!]]
       end)
       if self.default_text then
