@@ -1,3 +1,5 @@
+local api = vim.api
+
 local action_state = require "telescope.actions.state"
 local action_set = require "telescope.actions.set"
 local actions = require "telescope.actions"
@@ -66,14 +68,14 @@ local get_open_filelist = function(grep_open_files, cwd)
       return false
     end
     return true
-  end, vim.api.nvim_list_bufs())
+  end, api.nvim_list_bufs())
   if not next(bufnrs) then
     return
   end
 
   local filelist = {}
   for _, bufnr in ipairs(bufnrs) do
-    local file = vim.api.nvim_buf_get_name(bufnr)
+    local file = api.nvim_buf_get_name(bufnr)
     table.insert(filelist, Path:new(file):make_relative(cwd))
   end
   return filelist
@@ -119,7 +121,7 @@ files.live_grep = function(opts)
   end
   local search_dirs = opts.search_dirs
   local grep_open_files = opts.grep_open_files
-  opts.cwd = opts.cwd and utils.path_expand(opts.cwd) or vim.loop.cwd()
+  opts.cwd = opts.cwd and utils.path_expand(opts.cwd) or vim.uv.cwd()
 
   local filelist = get_open_filelist(grep_open_files, opts.cwd)
   if search_dirs then
@@ -395,49 +397,39 @@ files.find_files = function(opts)
     :find()
 end
 
-local function prepare_match(entry, kind)
-  local entries = {}
-
-  if entry.node then
-    table.insert(entries, entry)
-  else
-    for name, item in pairs(entry) do
-      vim.list_extend(entries, prepare_match(item, name))
-    end
-  end
-
-  return entries
-end
-
 --  TODO: finish docs for opts.show_line
 files.treesitter = function(opts)
   opts.show_line = vim.F.if_nil(opts.show_line, true)
+  local ts = vim.treesitter
+  local ft = vim.bo[opts.bufnr].filetype
+  local lang = ts.language.get_lang(ft)
 
-  local has_nvim_treesitter, _ = pcall(require, "nvim-treesitter")
-  if not has_nvim_treesitter then
-    utils.notify("builtin.treesitter", {
-      msg = "This picker requires nvim-treesitter",
-      level = "ERROR",
-    })
-    return
-  end
-
-  local parsers = require "nvim-treesitter.parsers"
-  if not parsers.has_parser(parsers.get_buf_lang(opts.bufnr)) then
+  if not (lang and ts.language.add(lang)) then
     utils.notify("builtin.treesitter", {
       msg = "No parser for the current buffer",
       level = "ERROR",
     })
     return
   end
+  local query = ts.query.get(lang, "locals")
+  if not query then
+    utils.notify("builtin.treesitter", {
+      msg = "No locals query for the current buffer",
+      level = "ERROR",
+    })
+    return
+  end
 
-  local ts_locals = require "nvim-treesitter.locals"
+  local parser = assert(ts.get_parser(opts.bufnr))
+  parser:parse()
+  local root = parser:trees()[1]:root()
+
   local results = {}
-  for _, definition in ipairs(ts_locals.get_definitions(opts.bufnr)) do
-    local entries = prepare_match(ts_locals.get_local_nodes(definition))
-    for _, entry in ipairs(entries) do
-      entry.kind = vim.F.if_nil(entry.kind, "")
-      table.insert(results, entry)
+  for id, node, _ in query:iter_captures(root, opts.bufnr) do
+    local kind = query.captures[id]
+
+    if node and vim.startswith(kind, "local.definition") then
+      table.insert(results, { kind = kind:gsub("^local%.definition", ""):gsub("^%.", ""), node = node })
     end
   end
 
@@ -470,10 +462,10 @@ end
 
 files.current_buffer_fuzzy_find = function(opts)
   -- All actions are on the current buffer
-  local filename = vim.api.nvim_buf_get_name(opts.bufnr)
-  local filetype = vim.api.nvim_buf_get_option(opts.bufnr, "filetype")
+  local filename = api.nvim_buf_get_name(opts.bufnr)
+  local filetype = vim.bo[opts.bufnr].filetype
 
-  local lines = vim.api.nvim_buf_get_lines(opts.bufnr, 0, -1, false)
+  local lines = api.nvim_buf_get_lines(opts.bufnr, 0, -1, false)
   local lines_with_numbers = {}
 
   for lnum, line in ipairs(lines) do
@@ -569,7 +561,7 @@ files.current_buffer_fuzzy_find = function(opts)
           actions.close(prompt_bufnr)
           vim.schedule(function()
             vim.cmd "normal! m'"
-            vim.api.nvim_win_set_cursor(0, { selection.lnum, first_col })
+            api.nvim_win_set_cursor(0, { selection.lnum, first_col })
           end)
         end)
 
@@ -619,7 +611,7 @@ files.tags = function(opts)
               vim.fn.search(scode)
               vim.cmd "norm! zz"
             else
-              vim.api.nvim_win_set_cursor(0, { selection.lnum, 0 })
+              api.nvim_win_set_cursor(0, { selection.lnum, 0 })
             end
           end,
         }
